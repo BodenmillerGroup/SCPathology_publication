@@ -1,0 +1,218 @@
+---
+title: "Make spillover matrix for compensation in IMC image"
+output: html_notebook
+---
+
+```{r Libraries}
+library(CATALYST)
+library("EBImage")
+library(data.table)
+library(fields)
+library(ggplot2)
+library(flowCore)
+library(plyr)
+library(dplyr)
+library(dtplyr)
+library(MASS)
+library(viridis)
+library(RColorBrewer)
+library(raster)
+library(stringr)
+
+```
+
+
+Point to the singlestain folders
+```{r Setup}
+fol_ss1 = c('/home/jana/Desktop/compensation_matrix/2017-09-22/')
+fol_ss2 = c('/home/jana/Desktop/compensation_matrix/2017-09-12/')
+fol_ss3 = c('/home/jana/Desktop/compensation_matrix/2017-11-15/')
+fol_out = '/home/jana/'
+prefix = '2018_05_03'
+
+```
+
+
+Load single stains
+```{r Load from Folders or Zips}
+
+load_ss_zip <- function(fol_ss3){
+  fns_inzip <- unzip(fol_ss3, list=T) %>%
+            do(as.data.frame(.$Name[ endsWith(.$Name, '.txt')]))
+
+  fns_inzip = fns_inzip[,1]
+  imgs.ss = lapply(fns_inzip, function(x){
+              fread(paste0('unzip -qp ', fol_ss3, ' ', gsub(" ", '\\\\ ', x)))
+                })
+  
+  names(imgs.ss) <- fns_inzip
+return(imgs.ss)
+}
+
+load_ss_fol <- function(fol_ss3){
+  fns_txt <- list.files(fol_ss3,pattern = '*.[0-9]+.txt$') 
+  imgs.ss <- lapply(fns_txt, function(x){
+              fread(file.path(fol_ss3, x))})
+  names(imgs.ss) <- fns_txt
+  return(imgs.ss)
+}
+list_img_ss <-lapply(fol_ss3, load_ss_fol)
+names(list_img_ss) <- fol_ss3
+#imgs.ss = do.call(list, unlist(imgs.ss, recursive=FALSE))
+```
+
+Fix the names within the text files to by CATALYST compatible
+```{r}
+fixnames <- function(imgdat){
+    imgdat = copy(imgdat)
+    dat =imgdat
+    
+    colnames(dat) = sapply(colnames(dat), function(x) gsub('.*\\(', '',x))
+    colnames(dat) = sapply(colnames(dat), function(x) gsub('\\)', '',x))  
+    return(dat)
+}
+
+imglist2dat <- function(datlist){
+  imgdat <- rbindlist(lapply(datlist, fixnames), fill=T, idcol = 'file')
+  #imgdat <- imgdat
+  return(imgdat)
+}
+
+dats_raw = lapply(list_img_ss, imglist2dat)
+```
+
+
+Extract BC masses from the filenames
+```{r Get bc masses}
+
+for (dat in dats_raw){
+  dat[, metal:= strsplit(.BY[[1]], '_')[[1]][3],by=file]
+  dat[, mass:= as.numeric(str_extract_all(.BY[[1]], "[0-9]+")[[1]]),by=metal]
+}
+```
+
+Look at the data
+```{r}
+summarize_dat <- function(dat){
+  tdat = dat %>%  
+    dplyr::select(-c(Start_push, End_push, Pushes_duration,   X , Y  ,  Z)) %>%
+  melt.data.table(id.vars = c('metal', 'mass','file')) %>%
+  do(data.table(.)[, list(med=median(value)), by=.(variable, metal, mass, file)]) 
+  return(tdat)
+  
+}
+
+dats_raw_sum = rbindlist(lapply(dats_raw, summarize_dat),idcol = T)
+```
+
+Look at the data
+```{r fig.width=17, fig.height=10}
+dats_raw_sum %>%
+  ggplot(aes(x=mass, y=med, color=.id))+
+  facet_wrap(~file+metal, scales = 'free_y')+
+  geom_label(aes(label=variable))
+  #geom_jitter(height = 0)
+  
+```
+
+Depending on the intensity it could be worth to bin some (consecuteive) pixels to get a better accuracy for the estimation
+```{r}
+
+npixelbin = 3
+
+get_consecutive_bin <- function(nel, nbin){
+  idx = rep(1:ceiling(nel/nbin), each=nbin)
+  return(idx[1:nel])
+}
+
+aggregate_pixels <- function(dat, n){
+  tdat = dat[, rowsum(.SD, get_consecutive_bin(.N, n)) ,by=.(file, mass, metal)]
+  return(tdat)
+}
+
+dats_agg <- lapply(dats_raw, function(x) aggregate_pixels(x, n=npixelbin))
+dats_agg_sum = rbindlist(lapply(dats_agg, summarize_dat), idcol = T)
+```
+
+After aggregation
+```{r fig.width=17, fig.height=10}
+dats_agg_sum %>%
+  ggplot(aes(x=mass, y=med, color=.id))+
+  facet_wrap(~file+metal, scales = 'free_y')+
+  geom_label(aes(label=variable))
+  #geom_jitter(height = 0)
+  
+```
+
+Define helper funcitons
+```{r Define helper functions}
+filter_rare_bc <- function(re, minevents){
+  stats = table(re@bc_ids)
+  nonfreq = names(stats)[stats <minevents]
+  re@bc_ids[re@bc_ids %in% nonfreq] = '0'
+  return(re)
+  
+}
+
+ensure_correct_bc <- function(re, mass){
+  re@bc_ids[re@bc_ids != as.character(mass)] = '0'
+  return(re)
+}
+
+
+re_from_dat <- function(dat, bc_ms, minevents=10){
+  ff = dat %>%
+      dplyr::select(-c(file, mass, metal)) %>%
+      as.matrix.data.frame() %>%
+      flowFrame()
+  
+  
+  re <- CATALYST::assignPrelim(x=ff,y= bc_ms)
+  re <- estCutoffs(re)
+  re <- applyCutoffs(re)
+
+  # filter for conditions with less then minevents
+  #re = ensure_correct_bc(re, dat[, mass])
+  re = filter_rare_bc(re, minevents)
+  return(re)
+}
+
+
+
+sm_from_re <- function(re, ...){
+  sm = computeSpillmat(re, ...)
+  return(sm)
+}
+
+sm_from_dat <- function(dat, bc_ms, minevents=10, ...){
+  re <- re_from_dat(dat, bc_ms, minevents)
+  sm <- sm_from_re(re, ...)
+  return(sm)
+}
+```
+
+Write out spillover matrix
+```{r Binned}
+
+res = lapply(dats_agg, function(x) re_from_dat(x, x[!is.na(mass), unique(mass)]))
+sms = lapply(res, function(x) sm_from_re(x))
+sm = data.frame(sms[[1]])
+fwrite(sm, file='/home/jana/sm_test.csv', col.names = TRUE, row.names = TRUE)
+```
+
+Plot spillover matrix
+```{r}
+i = 1
+bc_ms =  dats_agg[[i]][!is.na(mass), unique(mass)]
+custom_isotope_list <- c(CATALYST::isotope_list, list(BCKG=190, ArAr=80))
+CATALYST::plotSpillmat(bc_ms,sms[[1]], isotope_list=custom_isotope_list)
+```
+
+```{r quick check if the debarcoding went well, so all the events were correclty classified}
+i =1
+re = res[[i]]
+dat = copy(dats_agg[[i]])
+dat[ , bc := bc_ids(re)]
+
+dat[bc!= '0', sum(as.character(mass) != bc), by=metal]
+```

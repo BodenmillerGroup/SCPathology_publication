@@ -1,0 +1,356 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#First part: Convert histoCAT output csvs to R format
+
+Load the libraries
+```{r Libraries, include = FALSE}
+library('data.table')
+library(bbRtools)
+```
+
+
+Settings
+```{r 1.Settings}
+# Paths to your input and output folders
+folder_csv_images <- '/home/jana/Desktop/Bug/custom_gates_0/CSVsBasel'
+
+# Get today's date for file naming
+d <- gsub("-", "", Sys.Date())
+```
+
+
+Load the data
+```{r 1.Loading}
+# Get the csv filenames
+fn_csv_full <- list.files(folder_csv_images, full.names = TRUE, pattern=".csv")
+fn_csv <- gsub(".csv", "", fn_csv_full)
+fn_csv <- gsub(paste0(folder_csv_images,"/"), "", fn_csv)
+
+# Load the data
+cells <- lapply(fn_csv_full, fread, header = TRUE, check.names = TRUE)
+names(cells) <- fn_csv
+cells <- rbindlist(cells, fill = TRUE, use.names = TRUE, idcol = "core")
+
+# Assign standard cell IDs
+cells <- cells[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)]
+```
+
+
+Save the correspondance between image names and ImageIds in histoCAT
+```{r 1.Image IDs}
+ImageIDs <- unique(cells[,.(core, ImageId)])
+```
+
+Look for duplicated cells, warn user
+```{r}
+if (any(duplicated(cells[,id]))) {"Warning: Duplicated cells in the dataset"}
+```
+
+Split the dataset in smaller datasets relevant to the different parameters to analyze
+```{r 1.Split dataset}
+# Marker expression dataset
+marker_cn <- colnames(cells)[grep('Cell_', colnames(cells))]
+marker_cn <- c("core", "CellId", "id", marker_cn)
+micat.marker <- cells[, marker_cn, with=FALSE]
+
+marker_name_split <- strsplit( as.character(colnames(micat.marker)), "_")
+marker_name_split <- marker_name_split[4:length(marker_name_split)]
+marker_name_short <- unlist(lapply(marker_name_split, function(x){paste(x[3],x[2])}))
+#Switch Sox9 and S6 (because they were named wrongly on the channels originally, has been changed everywhere since)
+store = marker_name_short[42]
+marker_name_short[42] <- marker_name_short[39]
+marker_name_short[39] <-store
+colnames(micat.marker) <- c("core", "CellId", "id", marker_name_short)
+
+# Spatial dataset
+spatial_cn <- c("core", "CellId", "id", "Area", "Eccentricity", "Solidity", "Extent", "EulerNumber", "Perimeter", "MajorAxisLength", "MinorAxisLength", "Orientation", "Percent_Touching", "Number_Neighbors")
+micat.spatial <- cells[, spatial_cn, with=FALSE]
+
+# Neighborhood dataset, if there are neighbors (by default histoCAT Citrus exports csv files without neighbors)
+neighbor_cn <- colnames(cells)[grep('neighbour', colnames(cells))]
+neighbor_cn <- c("core", "CellId", "id", "Number_Neighbors", neighbor_cn)
+micat.neighb <- cells[,neighbor_cn, with=FALSE]
+
+#Custom channel dataset
+custom_cn <- colnames(cells)[!colnames(cells) %in% c(marker_cn, spatial_cn, neighbor_cn, "ImageId")]
+custom_cn <- c("core", "CellId", "id",custom_cn)
+micat.custom <- cells[,custom_cn, with=FALSE]
+
+
+```
+
+
+Counts scaling and normalization in the marker dataset 
+```{r 1.Scaling and Normalization}
+# Melt the dataset into long format
+idvars <- c('core', 'CellId', 'id')
+measurevars <- setdiff(colnames(micat.marker), idvars)
+micat.marker_long <- melt.data.table(micat.marker, id.vars = idvars, measure.vars = measurevars, variable.name = 'channel', value.name = 'mc_counts', na.rm=TRUE)
+
+# Outliers with values higher than xx% of all cells
+censor_val = 0.999
+
+# Calculate transformed count
+micat.marker_long[, mc_counts_transf := log10(mc_counts+min(mc_counts[mc_counts >0])), by=channel]
+
+# Calculate the scaled counts
+micat.marker_long[, mc_ccounts := bbRtools::censor_dat(mc_counts,censor_val), by=channel]
+micat.marker_long[, mc_ccounts_scaled := mc_ccounts, by=channel]
+micat.marker_long[, mc_ccounts_scaled := (mc_ccounts_scaled/max(mc_ccounts_scaled)), by=channel]
+micat.marker_long[mc_ccounts_scaled < 0, mc_ccounts_scaled := 0, by=channel]
+```
+
+Save the datasets
+```{r 1.Save}
+# Save the marker dataset
+fn <- paste0(d, "_", "miCAT", "_", "Markers", ".csv")
+fwrite(micat.marker_long, file=paste0(folder_out, "/", fn), col.names = TRUE)
+
+# Save the spatial dataset
+fn <- paste0(d, "_", "miCAT", "_", "Spatial", ".csv")
+fwrite(micat.spatial, file=paste0(folder_out, "/", fn), col.names = TRUE)
+
+# Save the neighborhood dataset
+fn <- paste0(d, "_", "miCAT", "_", "Neighbors", ".csv")
+fwrite(micat.neighb, file=paste0(folder_out, "/", fn), col.names = TRUE)
+
+# Save the custom gates dataset
+fn <- paste0(d, "_", "miCAT", "_", "CustomGates", ".csv")
+fwrite(micat.custom, file=paste0(folder_out, "/", fn), col.names = TRUE)
+
+```
+
+#Second part specific to our project: Loading and cleaning of data so that names in SC data match metadata (mostly necessary due to typos/ discrepancies in naming), needs to only be done once and then resulting cleaned data can be saved (cleaned data provided, ready for analysis in 'cleaned_pipeline_downstream_analysis.Rmd')
+
+Settings
+Set your project specific folders and settings
+```{r Settings}
+# Input files: fn_cells = marker file generated by first part of script above
+# fn_cells = '/home/jana/Desktop/bb_volume_jana/Data/2018/Clinical_paper/SpilloverCorrected/R_dat/20180116_miCAT_Markers.csv'
+# out_folder = '/home/jana/Desktop/bb_volume_jana/Data/2018/Clinical_paper/SpilloverCorrected/R_dat/'
+# fn_meta_basel = '/home/jana/Desktop/bb_volume_jana/Data/2018/Clinical_paper/BaselTMA_metadata_Clinical_matched.csv'
+# fn_meta_zuri = '/home/jana/Desktop/bb_volume_jana/Data/Clinical_New/Corrected_data/metadata_Clinical.csv'
+# fn_custom <- '/home/jana/Desktop/bb_volume_jana/Data/2018/Clinical_paper/SpilloverCorrected/R_dat/20180116_miCAT_CustomGates.csv'
+# fn_image = '/home/jana/Desktop/bb_volume_jana/Data/2018/Clinical_paper/Image.csv'
+# fn_spatial <- '/home/jana/Desktop/bb_volume_jana/Data/2018/Clinical_paper/SpilloverCorrected/R_dat/20180116_miCAT_Spatial.csv'
+
+
+# Input files: fn_cells = marker file generated by first part of script above
+fn_cells = '/home/jana/Desktop/R_dat/20190108_miCAT_Markers.csv'
+fn_spatial = '/home/jana/Desktop/bb_volume_jana/Data/2019/Revisions_clinicalPaper_fromScratch/Cleaning/MarkerSpatialUncleaned/20190108_miCAT_Spatial.csv'
+fn_meta_basel = '/home/jana/Desktop/bb_volume_jana/Data/2019/Revisions_clinicalPaper_fromScratch/Cleaning/BaselTMA_metadata_Clinical_matched.csv'
+fn_image = '/home/jana/Desktop/bb_volume_jana/Data/2019/Revisions_clinicalPaper_fromScratch/Cleaning/Image.csv'
+
+
+```
+
+Load the data, takes a couple minutes
+```{r}
+# Load marker single cell data
+dat <- fread(fn_cells,header = T)
+test = unique(dat$core)
+dat <- dat[,1:5] #cutting off the transformed and scaled value columns because I am only using the values as exported from histoCAT, here called mc_counts
+
+# #Remove Zurich samples from data if uncleaned data even submitted
+# dat = dat[str_detect(dat$core,'Basel'),]
+
+#Adjust core names corresponding to metadata
+split_core = strsplit(dat$core,'_', fixed = TRUE)
+dat$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
+
+#Replace the ones that don't need acquisition number again
+short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
+duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
+in_cores_index = unlist(lapply(unique(dat$core)[duplicate_idx],function(x){which(dat$core %in% x)}))
+dat$core[setdiff(1:length(dat$core),in_cores_index)] = unlist(lapply(strsplit(dat$core[setdiff(1:length(dat$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
+
+#Delete zeros
+dat$core = unlist(lapply(dat$core,function(x){gsub("000","",x)}))
+short = unlist(lapply(short,function(x){gsub("000","",x)}))
+
+#Get names of the ones that need extension (would be duplicates otherwise because second acquisition to continue same core because failed in middle first)
+need_extension = short[duplicated(short)]
+with_extension = unique(dat$core)[duplicate_idx]
+
+```
+
+Cleaning of typos and names so they match between metadata and SC data
+```{r}
+# Load metadata
+Sample_metadat_basel <- fread(fn_meta_basel,header = T)
+
+# Merge the two metadata files for Zuri and Basel
+colnames(Sample_metadat_basel) = unlist(lapply(colnames(Sample_metadat_basel),function(x){gsub(" ","",x)}))
+Sample_metadat_basel$TMALocation = unlist(lapply(Sample_metadat_basel$TMALocation,function(x){gsub(" ","",x)}))
+Sample_metadat_basel[,core := paste( .BY,collapse =  "_"), by=.(AllSamplesSVSp4.Array,AllSamplesSVSp4.SurgeryID,TMALocation)]
+Sample_metadat_basel$core = unlist(lapply(Sample_metadat_basel$core,function(x){gsub("\\.","",x)}))
+Sample_metadat_basel$core = unlist(lapply(Sample_metadat_basel$core,function(x){gsub("_UB_SX_","_",x)}))
+Sample_metadat_basel$core = unlist(lapply(Sample_metadat_basel$core,function(x){paste0("BaselTMA_",x)}))
+Sample_metadat_basel$core = unlist(lapply(Sample_metadat_basel$core,function(x){gsub("p","P",x)}))
+Sample_metadat_basel$core = unlist(lapply(Sample_metadat_basel$core,function(x){gsub("x","X",x)}))
+Sample_metadat_basel$core = unlist(lapply(Sample_metadat_basel$core,function(x){gsub("y","Y",x)}))
+Sample_metadat_basel$core = unlist(lapply(Sample_metadat_basel$core,function(x){gsub("000","",x)}))
+colnames(Sample_metadat_basel)[34] = 'gender'
+Sample_metadat_basel$gender = toupper(Sample_metadat_basel$gender)
+colnames(Sample_metadat_basel)[2] = 'patientcode'
+colnames(Sample_metadat_basel)[19] = 'histology'
+
+library('plyr')
+#combined_metadata = rbind.fill(Sample_metadat_zuri,Sample_metadat_basel)
+split_micro = strsplit(Sample_metadat_basel$PTNM_T ,'\\(')
+Sample_metadat_basel$PTNM_T = lapply(split_micro, function(x){x[1]})
+Sample_metadat_basel$microinvasion = unlist(lapply(split_micro,function(x){length(x) >1}))
+
+library('pracma')
+i_minus = unlist(lapply(strfind(Sample_metadat_basel$PTNM_N ,'(i-)'), function(x){!isempty(x)}))
+i_minus[(length(i_minus)+1):nrow(Sample_metadat_basel)] = FALSE
+Sample_metadat_basel$I_plus_neg[i_minus] = 'i-'
+i_plus = unlist(lapply(strfind(Sample_metadat_basel$PTNM_N ,'(i+)'), function(x){!isempty(x)}))
+i_plus[(length(i_plus)+1):nrow(Sample_metadat_basel)] = FALSE
+Sample_metadat_basel$I_plus_neg[i_plus] = 'i+'
+
+sn = unlist(lapply(strfind(Sample_metadat_basel$PTNM_N ,'(sn)'), function(x){!isempty(x)}))
+sn[(length(sn)+1):nrow(Sample_metadat_basel)] = FALSE
+Sample_metadat_basel$SN[sn] = 'sn'
+sl = unlist(lapply(strfind(Sample_metadat_basel$PTNM_N ,'sl'), function(x){!isempty(x)}))
+sl[(length(sl)+1):nrow(Sample_metadat_basel)] = FALSE
+Sample_metadat_basel$SN[sl] = 'sl'
+
+mic = unlist(lapply(strfind(Sample_metadat_basel$PTNM_N ,'mic'), function(x){!isempty(x)}))
+mic[(length(mic)+1):nrow(Sample_metadat_basel)] = FALSE
+Sample_metadat_basel$MIC[mic] = 'mic'
+
+split_PTNM_N = strsplit(Sample_metadat_basel$PTNM_N ,'\\(')
+Sample_metadat_basel$PTNM_N = lapply(split_PTNM_N, function(x){x[1]})
+
+
+
+
+# Load image meta data and extract image area
+image_meta <- fread(fn_image,header = T,stringsAsFactors = F)
+image_meta_short <- image_meta[, c('Count_Cells','FileName_FullStack','Height_FullStack','Width_FullStack')]
+image_meta_short[, core := getInfoFromFileList(as.character(.BY),sep = '_',strPos =c(1,2,8,9,10)),by=FileName_FullStack]
+image_meta_short[, test := getInfoFromFileList(as.character(.BY),sep = '_',strPos =c(1,2,8,9)),by=FileName_FullStack]
+image_meta_short[,area:= image_meta_short$Height_FullStack * image_meta_short$Width_FullStack]
+
+#Replace the ones that don't need acquisition number again
+short = image_meta_short$test
+duplicate_idx = unlist(lapply(short[duplicated(short)],function(x){which(short %in% x)}))
+in_cores_index = unlist(lapply(unique(image_meta_short$core)[duplicate_idx],function(x){which(image_meta_short$core %in% x)}))
+image_meta_short$core[setdiff(1:length(image_meta_short$core),in_cores_index)] = unlist(lapply(strsplit(image_meta_short$core[setdiff(1:length(image_meta_short$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
+image_meta_short$core = unlist(lapply(image_meta_short$core,function(x){gsub("000","",x)}))
+
+
+# Load spatial info
+spatial <- fread(fn_spatial,header = T,stringsAsFactors = F)
+spatial_short <- spatial[,c('core','id','Area')]
+spatial_short[,sum_area_cells := sum(Area), by = core]
+spatial_short <- spatial_short[,c('core','sum_area_cells')]
+spatial_short <- unique(spatial_short)
+spatial_short[, core_new := getInfoFromFileList(as.character(.BY),sep = '_',strPos =c(1,2,8,9,10)),by=core]
+spatial_short[, test := getInfoFromFileList(as.character(.BY),sep = '_',strPos =c(1,2,8,9)),by=core]
+spatial_short$core = spatial_short$core_new
+spatial_short$core_new = NULL
+
+#Replace the ones that don't need acquisition number again
+short = spatial_short$test
+duplicate_idx = unlist(lapply(short[duplicated(short)],function(x){which(short %in% x)}))
+in_cores_index = unlist(lapply(unique(spatial_short$core)[duplicate_idx],function(x){which(spatial_short$core %in% x)}))
+spatial_short$core[setdiff(1:length(spatial_short$core),in_cores_index)] = unlist(lapply(strsplit(spatial_short$core[setdiff(1:length(spatial_short$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
+spatial_short$core = unlist(lapply(spatial_short$core,function(x){gsub("000","",x)}))
+
+
+# Merge metadata with image_meta and cell area sum
+image_and_spatial = merge(image_meta_short, spatial_short, by = c('core'), all.x = TRUE, allow.cartesian=TRUE, rm.NA = TRUE)
+Sample_metadata = merge(Sample_metadat_basel, image_and_spatial, by = c('core'), all.x = TRUE, allow.cartesian=TRUE, rm.NA = TRUE)
+
+#Rename wrong ones, in metadata because faster (typos)
+Sample_metadata$core[which(Sample_metadata$core %in% "BaselTMA_SP41_040_X9Y2")] = "BaselTMA_SP41_040_X9Y3"
+Sample_metadata$core[which(Sample_metadata$core %in% "BaselTMA_SP41_007_X16Y4")] = "BaselTMA_SP41_046_X16Y4"
+Sample_metadata$core[which(Sample_metadata$core %in% "BaselTMA_SP42_199_X9Y3")] = "BaselTMA_SP42_187_X9Y3"
+Sample_metadata$core[which(Sample_metadata$core %in% "BaselTMA_SP42_322_X5Y8")] = "BaselTMA_SP42_00322_X5Y8"
+Sample_metadata$core[which(Sample_metadata$core %in% "BaselTMA_SP42_268_X4Y7")] = "BaselTMA_SP42_271_X4Y7"
+Sample_metadata$core[which(Sample_metadata$core %in% "BaselTMA_SP42_197_X12Y5")] = "BaselTMA_SP42_198_X12Y5"
+
+Sample_metadata$core[which(Sample_metadata$core %in% "BaselTMA_SP43_313_X14Y4")] = "BaselTMA_SP43_494_X14Y4"
+Sample_metadata$core[which(Sample_metadata$core %in% "BaselTMA_SP43_454_X10Y7")] = "BaselTMA_SP43_44_X10Y7"
+Sample_metadata$core[which(Sample_metadata$core %in% "BaselTMA_SP43_080_X3Y9")] = "BaselTMA_SP43_492_X3Y9"
+Sample_metadata$core[which(Sample_metadata$core %in% "BaselTMA_SP43_492_X3Y8")] = "BaselTMA_SP43_498_X3Y8"
+Sample_metadata$core[which(Sample_metadata$core %in% "BaselTMA_SP43_070_X4Y9")] = "BaselTMA_SP43_70_X4Y9"
+
+#Find samples that need to be duplicated and acquisition number needs to be added
+to_duplicate = unlist(lapply(need_extension, function(x){ which(Sample_metadata$core %in% x)}))
+
+#Check whether order of to_duplicate corresponds to the names in metadata
+Sample_metadata$core[to_duplicate] = with_extension[c(1,5,10,3,4,14,7,8,9,19,21,23,25)]
+Sample_metadata = rbind(Sample_metadata, Sample_metadata[to_duplicate,])
+Sample_metadata$core[((length(Sample_metadata$core)-length(to_duplicate))+1):length(Sample_metadata$core)] = with_extension[setdiff(1:length(with_extension),c(1,5,10,3,4,14,7,8,9,19,21,23,25))]
+
+
+test_match = lapply(unique(dat$core), function(x){ which(Sample_metadata$core %in% x)})
+em = unlist(lapply(test_match, function(x){isempty(x)}))
+unique(dat$core)[em]
+
+```
+
+Generate unique cell identifier and merge marker with spatial data
+```{r}
+#Add id column constructed of the core name and cellId
+dat[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)] 
+
+spatial <- fread(fn_spatial,header = T,stringsAsFactors = F)
+test = unique(spatial$core)
+
+split_core = strsplit(spatial$core,'_', fixed = TRUE)
+spatial$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
+
+#Replace the ones that don't need acquisition number again
+short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
+duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
+in_cores_index = unlist(lapply(unique(spatial$core)[duplicate_idx],function(x){which(spatial$core %in% x)}))
+spatial$core[setdiff(1:length(spatial$core),in_cores_index)] = unlist(lapply(strsplit(spatial$core[setdiff(1:length(spatial$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
+
+#Delete zeros
+spatial$core = unlist(lapply(spatial$core,function(x){gsub("000","",x)}))
+spatial[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)] 
+
+#Merge with spatial channels
+idcols <- c('core', 'CellId', 'id')
+dat = dcast.data.table(dat, formula = paste0(paste(idcols, collapse = '+'), '~', 'channel'), value.var = 'mc_counts') 
+dat = merge(dat, spatial, by = c("id","core","CellId"))
+measurevars <- setdiff(colnames(dat), idcols)
+dat <- melt.data.table(dat, id.vars = idcols, measure.vars = measurevars, variable.name = 'channel', value.name = 'mc_counts', na.rm=TRUE)
+
+
+
+
+#Clean bad channels
+dat$channel = as.character(dat$channel)
+dat = dat[!channel %in% c('483739Yb171Di Sox9','1971527Ho165Di bCaten','2971330Dy161Di EpCAM','phospho Erk12'),]
+dat$channel[dat$channel == 'Nd145 UnknownProteinNd145Di'] = 'Nd145Di Twist'
+
+
+```
+
+Save the renamed datasets
+```{r 1.Save}
+folder_out <- '/home/jana/Desktop'
+
+# Get today's date for file naming
+d <- gsub("-", "", Sys.Date())
+
+
+# Save the marker dataset
+fn <- paste0(d, "_", "renamed", "_", "dat", ".csv")
+fwrite(dat, file=paste0(folder_out, "/", fn), col.names = TRUE)
+
+# Save the metadata dataset
+fn <- paste0(d, "_", "renamed", "_", "Metadata", ".csv")
+fwrite(Sample_metadata, file=paste0(folder_out, "/", fn), col.names = TRUE)
+
+```
+
+

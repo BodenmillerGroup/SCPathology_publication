@@ -1,0 +1,136 @@
+```{r Libraries}
+
+library('data.table')
+library('RColorBrewer')
+library(dplyr)
+library(dtplyr)
+library(ggplot2)
+library(tiff)
+library(EBImage)
+library(fields)
+library(raster)
+library(viridis)
+
+library(CATALYST)
+library(raster)
+library(scales)
+```
+
+
+```{r}
+# input files: paths to your input and output folder
+fn_cells = '/home/jana/Desktop/R_dat/curr_single_cell.csv'
+fn_pannel = '/home/jana/Desktop/bb_volume_jana/Data/2018/Clinical_paper/SpilloverCorrected/Data_for_submission/20171218_pannel_BaselZuri.csv'
+fn_sm = '/home/jana/Desktop/bb_volume_jana/Data/2018/Clinical_paper/SpilloverCorrected/Data_for_submission/spillover_matrix_15082018.csv'
+
+
+# the random seed
+rand_seed = 1234
+# Should the script use only the cells subsampled at the tsne step?
+subsampled_cells_only = F
+
+```
+
+
+```{r}
+getInfoFromString<- function(name,sep='_',strPos=2,censorStr='.fcs'){
+  tp <- gsub(censorStr,'',strsplit(name,sep)[[1]][strPos])
+  tp <- paste(tp,collapse = sep)
+  return(tp)
+}
+
+```
+
+```{r}
+#' Parses a list of strings and gets the corresponding information
+#'
+#' See getInfoFromString for more information
+#'
+#' @export
+getInfoFromFileList <- function(fileList,sep='_',strPos=2,censorStr='.fcs'){
+  condDict = sapply(fileList,function(file){getInfoFromString(file,sep,strPos,censorStr)})
+  names(condDict) <- fileList
+  return(condDict)
+}
+```
+
+```{r}
+### load cell data (cells rescaled expanded)
+cells <- fread(fn_cells,header = T)
+
+measurevar = colnames(cells)[grep('Cell_', colnames(cells), ignore.case=TRUE)]
+cells_rest = data.frame(cells)
+rest_columns = cells_rest[,which(!(colnames(cells)%in% measurevar))]
+
+split_var = strsplit(measurevar,'_')
+names_dat = unlist(lapply(split_var,function(x){x[length(x)]}))
+
+dat_panel <- fread(fn_pannel,header = T)
+colnames(dat_panel)[2] = 'MetalTag'
+
+setkey(dat_panel,MetalTag)
+
+
+dat = data.frame(cells)
+dat = dat[, which(colnames(dat) %in% measurevar)]
+colnames(dat) = names_dat
+names = paste(colnames(dat),'Di')
+names = gsub(" ", "", names, fixed = TRUE)
+colnames(dat)<-names
+
+```
+
+```{r}
+
+compensate_dat <- function(indat,
+                           sm,
+                           channel_dict=NULL,
+                           channel_col='channel',
+                           meta_cols = c('ImageId', 'CellId'),
+                           custom_isotope_list=custom_isotope_list){
+  
+  
+  tdat <- indat
+  compdat = data.matrix(tdat)
+  compdat = tdat %>%
+    dplyr::select(-one_of(meta_cols)) %>%
+    data.matrix()
+  names_orig = colnames(compdat)
+  
+  compdat_after =   flowCore::flowFrame(compdat) %>%
+    compCytof(sm , method='nnls', isotope_list=custom_isotope_list) %>%
+    exprs()
+
+  
+  return(compdat_after)
+}
+```
+
+```{r}
+
+#Adjust spillover matrix
+sm = as.matrix(read.csv(fn_sm, row.names = 1))
+
+#Run spillover correction
+channel_col = 'Target'
+metal_col = 'MetalTag'
+dat_panel = data.frame(dat_panel)
+channel_dict = dat_panel[,metal_col]
+channel_dict = paste(channel_dict,'Di')
+channel_dict = gsub(" ","",channel_dict)
+names(channel_dict) = dat_panel[,channel_col]
+
+
+custom_isotope_list <- c(CATALYST::isotope_list, list(BCKG=190, ArAr=80))
+dat_comp = compensate_dat(dat, sm, channel_dict = channel_dict, custom_isotope_list=custom_isotope_list)
+
+#Adjust output data back to original histoCAT structure
+final_dat = data.frame(dat_comp)
+final_dat = cbind(rest_columns[,1:2],final_dat)
+
+colnames(final_dat) <-c("ImageId","CellId",measurevar)
+
+fwrite(final_dat,'/home/jana/Desktop/compensated_correct_basel.csv')
+```
+
+
