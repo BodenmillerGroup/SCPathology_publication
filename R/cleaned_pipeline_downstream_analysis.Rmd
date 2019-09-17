@@ -7,21 +7,18 @@ author: Jana R Fischer
 #Downstream R analysis on final single cell data (after cleaning of SC and metadata, final cleaned data provided)
 
 ```{r Libraries, include=FALSE}
-library('data.table')
-library('Rtsne')
-library(threejs)
-library('RColorBrewer')
-library(destiny)
+library(data.table)
+library(cowplot)
+library(RColorBrewer)
 library(dplyr)
-library(dtplyr)
-library(gplots)
-library(cba)
-library(bbRtools)
 library(gplots)
 library(ggplot2)
-library('stringr')
-library('pracma')
-library(cowplot)
+library(stringr)
+
+library('Rtsne')
+library(threejs)
+library(destiny)
+library(dtplyr)
 library(gridExtra)
 library('tsne')
 library("corrplot")
@@ -34,16 +31,22 @@ library('survival')
 
 ```{r Settings}
 #Filepaths
-fn_cells = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/SCdat_final.csv'
-fn_meta = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/Metadata_final.csv'
-fn_tsne <- '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/tsne_final.csv'
-fn_BaselPheno <- '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/PG_final_k20.csv' 
+# fn_cells = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/SCdat_final_old_patientcode.csv'
+# fn_meta = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/Metadata_final.csv'
+# fn_tsne <- '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/tsne_final_old_patientcode.csv'
+# fn_BaselPheno <- '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/PG_final_k20_old_patientcode.csv' 
+
+#Filepaths
+fn_cells = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/SC_dat.csv'
+fn_meta = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/Basel_PatientMetadata.csv'
+fn_tsne <- '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/tsne_final.csv'
+fn_BaselPheno <- '/home/ubuntu/tmp/server_homes/janaf/Data/2019//Data_publication/BaselTMA/PG_final_k20.csv' 
 
 # Define channels to exclude from analyses
 exclude_channels = c("ImageId" ,"CellId" ,"In115 115InIn115Di","Xe134 134XeXe134Di","Hg202 202HgHg202Di","Pb204 204PbPb204Di","Pb206 206PbPb206Di","ArAr80 80ArArArAr80Di", "10311239Ru96Di Rutheni","10311240Ru98Di Rutheni","10311241Ru99Di Rutheni", "10311242Ru100Di Rutheni","10311243Ru101Di Rutheni", "10311244Ru102Di Rutheni","10311245Ru104Di Rutheni","Xe126 126XeXe126Di","I127 127II127Di","Xe131 131XeXe131Di","Pb207 207PbPb207Di","Pb208 208PbPb208Di","EulerNumber","MajorAxisLength","MinorAxisLength", "Orientation","10331253Ir191Di Iridium","Perimeter","Solidity")
 
 
-#Set custom order for PG and metaclusters (so the order is consitently immune (green), endothelial(yellow), stroma (light blue), tumor cells(remaining colors))
+#Define order for PG clusters and metaclusters (so the order is consitently immune (green), endothelial(yellow), stroma (light blue), tumor cells(remaining colors), same order as in the metacluster heatmap in Extended Data 9)
 cluster_order_basel = c("26","63","54","44", #brown
                         "29","34","22","58","59", #yellow orange
                         "61","62","14","48","20","39","24","31","53",# burnt orange
@@ -75,9 +78,67 @@ cluster_order_basel_meta = c("1","2","3","4","5","6", #green
                              "24",#burnt orange
                              "25",#yellow orange
                              "26",#brown
-                             "27"
+                             "27"#dark red
                              )
 
+```
+
+Define a general color map of distinguishable colors
+```{r}
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+col_vector = unique(col_vector)
+```
+
+Define custom colormap with colors according to cell types, corresponding to order definted above
+```{r}
+
+#PG clusters
+mycols_basel <- colors()[c(430,86,636,520,642,85,419,114,459,652,
+                           566,644,464,55,109,32,555,76,257,587,
+                           558,117,460,621,258,12,370,471,367,568,
+                           498,132,74,119,635,43,149,259,54,84,
+                           456,95,29,502,597,142,134,585,30,374,
+                           96,99,500,79,550,26,36,78,75,429,
+                           52,53,572,551,525,490,35,475,33,81,68)]
+
+#Metaclusters
+mycols_basel_meta <- colors()[c(258,257,86,85,259,81, #green
+                                652, #yellow
+                                636,520,430,109,68,43,#light blue
+                                132,#other dark blue
+                                26,#dark blue
+                                8,12, #turquouis
+                                33,#red
+                                551,#dark purple
+                                95,#light purple
+                                419,#light pink
+                                117,#pink
+                                52,#burnt orange
+                                500,#orange
+                                568,#pink orange
+                                624, #brown
+                                133)] #dark red
+
+#SCP patient group colors
+mycols_patient = colors()[c(52,500,540,568,571,117,419,314,371,450,95,551,33,8,12,26,132,624)]
+
+#Colormap for clinical subgroups
+mycols_clinical = colors()[c(545,622,525,74)]
+
+#Write out colors as RGB to use in other software (highlight cell types in histoCAT in same colors)
+#Small Phenograph clusters
+RGB = t(col2rgb(mycols_basel[order(as.numeric(cluster_order_basel))])) #in histoCAT clusters are ordered sequentially according to their cluster number
+RGB_norm = (RGB - min(RGB))/(max(RGB) - min(RGB)) 
+fwrite(data.table(RGB_norm), file='/home/jana/Desktop/R_dat/RGB_basel_meta.csv', col.names = TRUE)
+hex = rgb(RGB_norm)
+
+#Metaclusters
+RGB = t(col2rgb(mycols_basel_meta)) 
+RGB_norm = (RGB - min(RGB))/(max(RGB) - min(RGB)) 
+fwrite(data.table(RGB_norm), file='/home/jana/Desktop/R_dat/RGB_basel_meta.csv', col.names = TRUE)
+hex = rgb(RGB_norm)
+                
 ```
 
 ```{r Load data}
@@ -86,7 +147,7 @@ cluster_order_basel_meta = c("1","2","3","4","5","6", #green
 dat <- fread(fn_cells,header = T)
 #Metadata
 Sample_metadata <- fread(fn_meta,header = T)
-#PhenoGraph results
+#PhenoGraph clusters
 custom_PG <- fread(fn_BaselPheno, header = T)
 #tSNE results
 custom_tsne <-fread(fn_tsne, header = T)
@@ -114,206 +175,8 @@ cluster_pheno <- custom_PG[,pheno_cn, with=FALSE]
 colnames(cluster_pheno) <- c("id","cluster")
 ```
 
-Run this part if you want to continue working with the metaclusters, otherwise keep small PG clusters from above
-```{r}
-# #Aggregate to meta clusters according to groups in hierarchically clustered heatmap (bellow), HARDCODED!
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(25)] = 1
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(19)] = 2
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(2)] = 3
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(6)] = 4
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(38)] = 5
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(70)] = 6
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(10)] = 7
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(3)] = 8
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(4)] = 9
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(1)] = 10
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(15)] = 11
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(71)] = 12
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(36)] = 13
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(11)] = 14
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(66,43,32,49,56)] = 15
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(35,68,8,60)] = 16
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(23,33,45)] = 17 #23,33,26
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(47,57,17,50,16,67,69)] = 18
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(52,28,64)] = 19 #+45
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(55,13,9,40,51,42)] = 20 #-9
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(21,65,7)] = 21 #same but lower
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(12,5,41,30,27,18,46,37)] = 22 #
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(53,31,24,39)] = 23
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(20,48,14,62,61)] = 24 # same but different place
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(59,58,22,34,29)] = 25
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(44,54,63,26)] = 26 #-26
-# 
-# cluster_pheno$cluster = cluster_pheno$cluster_new
-# cluster_pheno$cluster_new = NULL
-# cluster_pheno_old = cluster_pheno
-# 
-# 
-# 
-# #Aggregate to meta clusters according to groups in hierarchically clustered heatmap (bellow), HARDCODED!
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(25)] = 1
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(19)] = 2
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(2)] = 3
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(6)] = 4
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(38)] = 5
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(70)] = 6
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(10)] = 7
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(3)] = 8
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(4)] = 9
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(1)] = 10
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(15)] = 11
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(71)] = 12
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(36)] = 13
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(11)] = 14
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(66,43,32,49,56)] = 15
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(35,68,8,60)] = 16
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(23,33,26)] = 17 
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(47,57,17,50,16,69,67)] = 18
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(52,28,64,45)] = 19 
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(55,13,40,51,42)] = 20 
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(59,61,14,48,62,20,24)] = 23 
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(39,9,12,29,34,22)] = 25
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(21,65,7)] = 21 
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(18,46,53,37,31,58)] = 24
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(41,5,27,30)] = 22 
-# cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(44,54,63)] = 26 
-# 
-# cluster_pheno$cluster = cluster_pheno$cluster_new
-# cluster_pheno$cluster_new = NULL
 
-
-#Aggregate to meta clusters according to groups in hierarchically clustered heatmap (bellow), HARDCODED!
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(25)] = 1
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(19)] = 2
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(2)] = 3
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(6)] = 4
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(38)] = 5
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(70)] = 6
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(10)] = 7
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(3)] = 8
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(4)] = 9
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(1)] = 10
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(15)] = 11
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(71)] = 12
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(36)] = 13
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(11)] = 14
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(66,43,32,49,56)] = 15
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(35,68,8,60)] = 16
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(23,33,26)] = 17 
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(47,57,17,50)] = 18
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(16,69,67)] = 27
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(52,28,64,45)] = 19 
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(55,13,40,51,42)] = 20 
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(59,61,14,48,62,20,24)] = 23 
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(39,9,12,29,34,22)] = 25 
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(21,65,7)] = 21 
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(18,46,53,37,31)] = 24
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(58,41,5,27,30)] = 22 #58
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(44,54,63)] = 26 
-
-cluster_pheno$cluster = cluster_pheno$cluster_new
-cluster_pheno$cluster_new = NULL
-
-```
-
-Define a general color map of distinguishable colors
-```{r}
-qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
-col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
-col_vector = unique(col_vector)
-```
-
-Define custom colormap with colors according to cell type groups heatmap, corresponding to order definted above
-```{r}
-
-mycols_basel <- colors()[c(624,572,79,502, #brown
-                          76,142,149,78,75, #yellow orange
-                          52,53,55,585,587,54,621,498,500, # burnt orange
-                          117,119,367,370,451,456,642,644, #dark pink
-                          419,525,558, #light pink
-                          95,96,84,459,464,550,#light purple
-                          551,471,99,#dark purple
-                          33,35,32,374,555,36,134, #red
-                          12,74,460,429,114,475,635, #turquois
-                          26,30,132,29,566,490, #dark blue
-                          43,68,109,430,520,636, #light blue
-                          652, #yellow
-                          81,259,85,86,257,258)] #green
-
-
-mycols_basel <- colors()[c(430,86,636,520,642,85,419,114,459,652,
-                           566,644,464,55,109,32,555,76,257,587,
-                           558,117,460,621,258,12,370,471,367,568,
-                           498,132,74,119,635,43,149,259,54,84,
-                           456,95,29,502,597,142,134,585,30,374,
-                           96,99,500,79,550,26,36,78,75,429,
-                           52,53,572,551,525,490,35,475,33,81,68)]
-
-
-
-mycols_basel_meta_old <- colors()[c(258,257,86,85,259,81, #green
-                                652, #yellow
-                                636,520,430,109,68,43,#light blue
-                                132,#other dark blue
-                                26,#dark blue
-                                8,12, #turquouis
-                                33,#red
-                                551,#dark purple
-                                95,#light purple
-                                419,#light pink
-                                117,#pink
-                                500,#orange
-                                52,#burnt orange
-                                76,#yellow orange 76
-                                624 #brown
-                                )]
-
-
-mycols_basel_meta <- colors()[c(258,257,86,85,259,81, #green
-                                652, #yellow
-                                636,520,430,109,68,43,#light blue
-                                132,#other dark blue
-                                26,#dark blue
-                                8,12, #turquouis
-                                33,#red
-                                551,#dark purple
-                                95,#light purple
-                                419,#light pink
-                                117,#pink
-                                52,#burnt orange
-                                500,#orange
-                                568,#pink orange
-                                624, #brown
-                                133)] #dark red
-
-#Write out colors as RGB to use in other software (highlight cell types in histoCAT in same colors)
-#Small Phenograph clusters
-RGB = t(col2rgb(mycols_basel[order(as.numeric(cluster_order_basel))])) #in histoCAT clusters are ordered sequentially according to their cluster number
-RGB_norm = (RGB - min(RGB))/(max(RGB) - min(RGB)) 
-fwrite(data.table(RGB_norm), file='/home/jana/Desktop/R_dat/RGB_basel_meta.csv', col.names = TRUE)
-hex = rgb(RGB_norm)
-
-#Metaclusters
-RGB = t(col2rgb(mycols_basel_meta)) 
-RGB_norm = (RGB - min(RGB))/(max(RGB) - min(RGB)) 
-fwrite(data.table(RGB_norm), file='/home/jana/Desktop/R_dat/RGB_basel_meta.csv', col.names = TRUE)
-hex = rgb(RGB_norm)
-
-#Colormap for single cell patient groups
-mycols_patient_old = colors()[c(76,500,52,540,624,551,95,524,117,641,367,419,132,12,33,26,8)]
-
-
-#mycols_patient = colors()[c(132,568,367,641,500,33,95,312,12,419,538,26,540,95,551,538,8,117,52)]
-
-mycols_patient = colors()[c(52,500,540,568,571,117,419,314,371,450,95,551,33,8,12,26,132,624)]
-
-#Colormap for clinical subgroups
-mycols_clinical = colors()[c(545,622,525,74)]
-
-                
-```
-
-
+#tSNE visualizations
 Merge single cell data with metadata only necessary if you want to visualize metadata on single cell tSNE, otherwise skip
 ```{r}
 #Dcast data table into wide format
@@ -324,7 +187,7 @@ dat_meta = dcast.data.table(dat, formula = paste0(paste(idcols, collapse = '+'),
 dat_meta = merge(dat_meta, Sample_metadata, by = c('core'), all = TRUE, allow.cartesian=TRUE, rm.NA = TRUE)
 
 #Melt into long format again
-idvars <- c('core','CellId','id','patientcode','diseasestatus')
+idvars <- c('core','CellId','id','PID','diseasestatus')
 measurevars <- setdiff(colnames(Sample_metadata), idvars)
 dat_meta <- melt.data.table(dat_meta, id.vars = idvars, measure.vars = measurevars, variable.name = 'channel', value.name = 'value', na.rm=TRUE)
 
@@ -347,13 +210,10 @@ p =subset(dat, channel == marker)[tsne] %>%
   scale_color_gradientn(colours=rev(brewer.pal(11, 'Spectral')), name='Counts')+
   ggtitle(marker)
 
-pdf(file="....pdf", width=20, height=10)
-p
-dev.off()
 ```
 
 ```{r}
-#Visualize samples on tSNE
+#Visualize core ID on tSNE
 
 #Discrete values
 p =subset(dat, !duplicated(id))[tsne] %>%
@@ -370,20 +230,20 @@ p =subset(dat, !duplicated(id))[tsne] %>%
         plot.background=element_blank(),
         legend.key = element_blank())
 
-pdf(file="....pdf", width=80, height=30)
+pdf(file="tsne.pdf", width=80, height=30)
 p
 dev.off()
 
 ```
 
 ```{r}
-#Visualize patients on tSNE
+#Visualize patient ID on tSNE (Figure 1)
 setkey(dat_meta, id)
 
 #Discrete values
 p =subset(dat_meta, !duplicated(id))[tsne] %>%
   ggplot(aes(x=bh_V1, y=bh_V2))+
-  geom_point(size=0.3, alpha=1, aes(color=as.factor(patientcode)))+
+  geom_point(size=0.3, alpha=1, aes(color=as.factor(PID)))+
   labs(colour="Samples")+
   discrete_scale( aesthetics = c("red","blue","green"),palette = rev(brewer.pal(11, 'Spectral')),scale_name = "discrete",name='Factors')+
   ggtitle("Cores")+
@@ -395,7 +255,7 @@ p =subset(dat_meta, !duplicated(id))[tsne] %>%
         plot.background=element_blank(),
         legend.key = element_blank())
 
-pdf(file="....pdf", width=80, height=30)
+pdf(file="tsne.pdf", width=80, height=30)
 p
 dev.off()
 
@@ -443,208 +303,74 @@ p
 dev.off()
 ```
 
-Display PG/meta clusters on tSNE
+
+Plot heatmap of the PG clusters' mean/median marker expressions
 ```{r}
-
-setkey(dat, id)
-setkey(tsne,id)
-setkey(cluster_pheno,id)
-
-
-cluster_pheno$cluster <- factor(cluster_pheno$cluster, levels = cluster_order_basel_meta) #cluster_order_basel for small clusters
-
-p = subset(dat, !duplicated(id))[tsne][cluster_pheno] %>% 
-  ggplot(aes(x=bh_V1, y=bh_V2))+
-  geom_point(size=0.3, alpha=1, aes(color=cluster))+
-  labs(colour="Clusters")+
-  scale_color_manual(values = mycols_basel_meta[as.numeric(cluster_order_basel_meta)])+ #mycols_basel for small clusters
-  ggtitle('Phenograph')+
-  guides(color=guide_legend(override.aes=list(size=5)))+
-  theme(strip.background = element_blank(),
-        panel.background=element_rect(fill='white', colour = 'black'),
-        panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        plot.background=element_blank(),
-        legend.key = element_blank())
-
-pdf(file="....pdf", width=10, height=10)
-p
-dev.off()
-```
-
-Display patientgroups on tSNE (only after variable meta_patient_clustering has been assigned bellow)
-```{r}
-dat_meta = merge(dat_meta, tsne, by = 'id')
-dat_meta = merge(dat_meta, meta_patient_clustering, by = 'patientcode', all.x = TRUE)
-dat_meta$patient_pheno[dat_meta$diseasestatus != 'tumor'] = 'normal'
-dat_meta = unique(dat_meta[,-c('channel','mc_counts')])
-dat_meta$patient_pheno[is.na(dat_meta$patient_pheno)] = 5 #For visualizarion, add back in the patient group that was excluded from analysis because only 3 patients
-
-p = dat_meta %>%
-  ggplot(aes(x=bh_V1, y=bh_V2))+
-  geom_point(size=0.3, alpha=1, aes(color=factor(patient_pheno, levels = c(1:17,'normal'))))+
-  labs(colour="Clusters")+
-  scale_color_manual(values = c(mycols_patient[c(1:17)],'black'))+
-  ggtitle('Patientgroups')+
-  guides(color=guide_legend(override.aes=list(size=5)))+
-  theme(strip.background = element_blank(),
-        panel.background=element_rect(fill='white', colour = 'black'),
-        panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        plot.background=element_blank(),
-        legend.key = element_blank())
-
-pdf(file="/home/jana/Desktop/R_dat/patientgroupsonSCtsne.pdf")
-p
-dev.off()
-```
-
-Test new phenographs
-```{r}
-fn_BaselPheno = '/home/jana/Desktop/R_dat/PhenoGraph_test.csv'
-custom_PG <- fread(fn_BaselPheno, header = T)
-
-test = unique(custom_PG$core)
-
-split_core = strsplit(custom_PG$core,'_', fixed = TRUE)
-custom_PG$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
-
-#Replace the ones that don't need acquisition number again
-short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
-duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
-in_cores_index = unlist(lapply(unique(custom_PG$core)[duplicate_idx],function(x){which(custom_PG$core %in% x)}))
-custom_PG$core[setdiff(1:length(custom_PG$core),in_cores_index)] = unlist(lapply(strsplit(custom_PG$core[setdiff(1:length(custom_PG$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
-
-#Delete zeros
-custom_PG$core = unlist(lapply(custom_PG$core,function(x){gsub("000","",x)}))
-
-
-custom_PG[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)] 
-
-# Get Phenograph column
-pheno_cn <- c("id",colnames(custom_PG)[grep('PhenoGraph', colnames(custom_PG))])
-cluster_pheno <- custom_PG[,pheno_cn, with=FALSE]
-colnames(cluster_pheno) <- c("id","cluster")
-
-
-#good_channels = good_channels[!good_channels %in% c("3521227Gd155Di Slug","Nd145 UnknownProteinNd145Di")]
-```
-
-
-Plot heatmap of the meta/PG clusters' mean/median marker expressions
-```{r}
-# Prepare data
-cluster_pheno$cluster <- factor(cluster_pheno$cluster, levels = cluster_order_basel_meta) #nothing! for small clusters
-
-#For future remove controls (maybe separate variable)
+#Remove liver controls from further analysis
 dat = dat[!str_detect(dat$core,'Liver'),]
+cluster_pheno = cluster_pheno[!str_detect(cluster_pheno$id,'Liver'),]
 
+#censor data
 censor_val = 0.99
 dat[, c_counts := bbRtools::censor_dat(mc_counts,censor_val), by=channel]
 #dat[, sc_counts := scale(mc_counts,censor_val), by=channel]
 
-set.seed(2)
+#prepare data
+cluster_pheno$cluster <- factor(cluster_pheno$cluster) 
 summary_dat = dat[cluster_pheno][ channel %in% good_channels ,list(
   median_val = median(c_counts),
   mean_val= mean(c_counts),
-  std_val = std(c_counts),
+  std_val = pracma::std(c_counts),
   cell_cluster=.N),
   by=.(channel,cluster)]
 
-
+#data for heatmap
 hm_dat = dcast.data.table(data =summary_dat, formula = 'cluster ~ channel',
                           value.var = 'mean_val') #can be exchanged for 'median_val' 
 
-# Row names
+#row names
 trownames = hm_dat$cluster
 
-# Convert to a matrix
+#convert to a matrix
 hm_dat = as.matrix(hm_dat[,-1,with=F])
 row.names(hm_dat) = trownames
-
-#hm_dat = scale(hm_dat)
-#Write out for aligning with other cohorts
-fwrite(hm_dat,'/home/jana/Desktop/hm_dat_basel.csv',col.names = T,row.names = T)
 ```
 
-#Write out for cytocompare
+Plot the heatmap with z-scoring per marker (Figure 1)
 ```{r}
-hm_dat_mean = dcast.data.table(data =summary_dat, formula = 'cluster ~ channel',
-                          value.var = 'mean_val') #'median_val' can be exchanged for 'mean_val'
-       
-trownames = hm_dat_mean$cluster
-hm_dat_mean = as.matrix(hm_dat_mean[,-1,with=F])
-row.names(hm_dat_mean) = trownames                   
-                 
-
-hm_dat_std = dcast.data.table(data =summary_dat, formula = 'cluster ~ channel',
-                          value.var = 'std_val') #'median_val' can be exchanged for 'mean_val'
-                                 
-trownames = hm_dat_std$cluster
-hm_dat_std = as.matrix(hm_dat_std[,-1,with=F])
-row.names(hm_dat_std) = trownames 
-
-
-##### order markers same as zurich
-hm_dat_std = hm_dat_std[,colnames(combined_mat_zuri)] 
-hm_dat_mean = hm_dat_mean[,colnames(combined_mat_zuri)]   
-tcolnames = colnames(hm_dat_std)
-                          
-combined_mat = matrix(paste0(hm_dat_mean,';',hm_dat_std),nrow = nrow(hm_dat_mean),ncol = ncol(hm_dat_mean))
-colnames(combined_mat) = tcolnames
-rownames(combined_mat) = trownames
-
-
-
-write.table(combined_mat, file = "/home/jana/Desktop/R_dat/cytocomp_dat_Basel.txt", append = FALSE, sep = "\t",
-            row.names = TRUE, col.names = TRUE)
-
-
-nr = unique(summary_dat[,c('cluster','cell_cluster')])
-nr = nr[order(cluster),]
-fwrite(nr,'/home/jana/Desktop/R_dat/cluster_cell_numbers.csv',col.names = T)
-```
-
-Plot the heatmap with z-scoring per marker
-```{r}
-# Set color map
+#Set color map
 cols = rev(brewer.pal(11,'Spectral'))
 cmap = colorRampPalette(cols)
 
-# Hierarchical clustering on rows with Ward's linkage
+#Hierarchical clustering on rows
 tdist = as.dist(1-cor(t(hm_dat), method="spearman"))
 hr <- hclust(tdist, method="ward.D2")
-co_r <- order.optimal(tdist, hr$merge)
+co_r <- cba::order.optimal(tdist, hr$merge)
 hr$merge = co_r$merge
 hr$order = co_r$order
 
-# Order rows in heatmap according to clustering
-order_heatmap_zscored = row.names(hm_dat)[hr$order]
+#Save cluster order from heatmap
+order_heatmap = row.names(hm_dat)[hr$order]
 
-# Hierarchical clustering on columns with Ward's linkage
+#Hierarchical clustering on columns
 tdist = as.dist(1-cor((hm_dat), method="spearman"))
 hc <- hclust(tdist, method="ward.D2")
-co_c <- order.optimal(tdist, hc$merge)
+co_c <- cba::order.optimal(tdist, hc$merge)
 hc$merge = co_c$merge
 hc$order = co_c$order
 
-# Z-score data
+#Z-score data for visualization in heatmap
 p_dat = scale(hm_dat)
 
 # Censor z-score at 2
 p_dat[p_dat > 2] =2
 p_dat[p_dat < -2] =-2
 
+#color branches of dendrogram in heatmap (this doesn't exactly correspond to the metaclustering as stromal clusters are kept individually and some branches are separated further based on previous biological knowledge)
+dend1 <- dendextend::color_branches(as.dendrogram(hr), k = 19, col = colors()[c(624,367,500,419,568,95,551,33,137,136,12,8,11,258,259,85,26,44,109)])
 
-fwrite(data.table(hr$labels[hr$order]),'/home/jana/Desktop/ordered_labels_basel.csv',col.names = F)
-fwrite(data.table(hc$labels[hc$order]),'/home/jana/Desktop/ordered_channels_basel.csv',col.names = T)
-
-
-dend1 <- color_branches(as.dendrogram(hr), k = 19, col = colors()[c(624,367,500,419,568,95,551,33,137,136,12,8,11,258,259,85,26,44,109)])
-
-
+#save out heatmap
 pdf(file="/home/jana/Desktop/R_dat/heatmap.pdf", width=10, height=10)
-
 heatmap.2(p_dat,
           scale ='none',
           trace = "none",
@@ -658,17 +384,14 @@ heatmap.2(p_dat,
           xlab = 'Markers',
           ylab ='Cluster',
           main = 'PG_norm_slide',
-          colRow = mycols_basel) #mycols_basel for small clusters
-
+          colRow = mycols_basel) 
 dev.off()
-
 ```
 
-Histogram amount of cells in each cluster
+Histogram amount of cells in each cluster (Figure 1)
 ```{r}
 
-
-pdf(file="/home/jana/Desktop/R_dat/cles_per_cluster.pdf", width=20, height=10)
+pdf(file="cells_per_cluster.pdf", width=20, height=10)
 ggplot(data=cluster_pheno, aes(factor(cluster_pheno$cluster,levels = hr$labels[hr$order]))) + 
   stat_count(aes(fill = factor(cluster_pheno$cluster,levels = hr$labels[hr$order]))) + 
   scale_fill_manual(values = mycols_basel[as.numeric(hr$labels[hr$order])])
@@ -676,88 +399,12 @@ dev.off()
 
 ```
 
-Cluster correlations
+Plot marker distributions of clusters
 ```{r}
-hm_dat = hm_dat[,hc$labels[hc$order]]
-
-
-library(psych)
-pdf('/home/jana/Desktop/R_dat/cluster_correlations.pdf',width = 100, height = 100)
-pairs.panels(hm_dat, 
-             lm = T,
-             method = "pearson", # correlation method
-             hist.col = "#00AFBB",
-             density = TRUE
-             )
-dev.off()
-
-
-p_dat = scale(hm_dat)
-hm_dat_t = t(p_dat)
-
-
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(25)] = 1
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(19)] = 2
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(2)] = 3
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(6)] = 4
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(38)] = 5
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(70)] = 6
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(10)] = 7
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(3)] = 8
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(4)] = 9
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(1)] = 10
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(15)] = 11
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(71)] = 12
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(36)] = 13
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(11)] = 14
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(66,43,32,49,56)] = 15
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(35,68,8,60)] = 16
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(23,33,45)] = 17
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(47,57,17,50,16,67,69)] = 18
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(52,28,64)] = 19
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(55,13,9,40,51,42)] = 20
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(21,65,7)] = 21
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(12,5,41,30,27,18,46,37)] = 22
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(53,31,24,39)] = 23
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(20,48,14,62,61)] = 24
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(59,58,22,34,29)] = 25
-cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(44,54,63,26)] = 26
-
-for (i in 15:26){
-  cur_PG = unique(cluster_pheno$cluster[cluster_pheno$cluster_new == i])
-  cur = hm_dat_t[,colnames(hm_dat_t)[colnames(hm_dat_t) %in% cur_PG]]
-  library(psych)
-  pdf(paste0('/home/jana/Desktop/R_dat/PG_correlations_metacluster',as.character(i),'.pdf'),width = 10, height = 10)
-  pairs.panels(cur, 
-               lm = T,
-               method = "pearson", # correlation method
-               hist.col = "#00AFBB",
-               density = TRUE,
-               title = as.character(i)
-               )
-  dev.off()
-}
-```
-
-
-Covariance matrices of clusters
-```{r}
-subdat = subset(dat[cluster_pheno],by = cluster)
-cov_matrices = lapply(subdat, function(x){var(x)})
-TR = tr(cov_matrices)
-eigenvalues = eigen(cov_matrices)$values
-
-hypervolume = prod(sqrt(eigenvalues))
-
-
-```
-
-
-```{r}
-#per cluster nmarker distributions
+#per cluster marker distributions
 for (i in unique(cluster_pheno$cluster)){
   cdat <- dat[cluster_pheno][cluster == i,][channel %in% good_channels,][,markermean:= mean(c_counts),by = 'channel']
-  pdf(paste0('/home/jana/Desktop/R_dat/marker_distributions_cluster_',as.character(i),'.pdf'),width = 30,height = 100)
+  pdf(paste0('marker_distributions_cluster_',as.character(i),'.pdf'),width = 30,height = 100)
   print(ggplot(dat[cluster_pheno][cluster == i,][channel %in% good_channels,], aes(x=c_counts, colour=channel)) +
       geom_density(aes(y=..scaled..)) +
       geom_vline(data=cdat, aes(xintercept=markermean,  colour=channel),
@@ -765,8 +412,7 @@ for (i in unique(cluster_pheno$cluster)){
       facet_wrap( ~ channel, ncol=1))
   dev.off()}
 
-#per channel
-
+#per channel marker distributions
 for (i in unique(dat[channel %in% good_channels,]$channel)){
   cdat <- dat[cluster_pheno][channel %in% good_channels,][channel == i,][,markermean:= mean(c_counts),by = 'cluster']
   pdf(paste0('/home/jana/Desktop/R_dat/marker_distributions_PG_channel_',as.character(i),'.pdf'),width = 30,height = 150)
@@ -778,8 +424,6 @@ for (i in unique(dat[channel %in% good_channels,]$channel)){
     scale_color_manual(values = mycols_basel[as.numeric(hr$labels[hr$order])]))
   dev.off()}
 
-
-
 #grid
 cdat <- dat[cluster_pheno][channel %in% good_channels,][channel == i,][,markermean:= mean(c_counts),by = c('cluster','channel')]
 pdf('/home/jana/Desktop/R_dat/marker_distributions_cluster_allclusters.pdf',width = 100,height = 100)
@@ -788,50 +432,35 @@ ggplot(dat[cluster_pheno][channel %in% good_channels,], aes(x=c_counts, colour=c
       geom_vline(data=cdat, aes(xintercept=markermean,  colour=channel),
                  linetype="dashed", size=1)+
   facet_grid(cluster ~channel)
-      #facet_wrap( cluster ~ channel, ncol=1)
 dev.off()
 
 
 ```
 
-
-#Celltype bubble plot across clinical groups Figure 1
+Celltype bubble plot across clinical groups (Figure 1)
 ```{r}
 
+#order according to heatmap
 cluster_pheno$cluster = factor(cluster_pheno$cluster, levels = hr$labels[hr$order])
+bubble = unique(dat[cluster_pheno][,c('core','cluster','id')])
 
-cur = unique(dat[cluster_pheno][,c('core','cluster','id')])
+#Merge with metadata
+bubble = merge(bubble, Sample_metadata[!is.na(Sample_metadata$area),], by = c('core'))
+bubble = bubble[clinical_type != "", ]
 
+#Calculate fractions
+bubble = unique(bubble[,c('PID','cluster','id','clinical_type')])
+bubble[,nr_both := .N, by = c('cluster','clinical_type')]
+bubble[,perc_clin := nr_both/.N, by = 'clinical_type']
+bubble[,perc_clus := nr_both/.N, by = 'cluster']
 
-# Merge with metadata
-cur = merge(cur, Sample_metadata[!is.na(Sample_metadata$area),], by = c('core'))
-
-cur = unique(cur[,c('patientcode','cluster','id','clinical_type')])
-cur[,nr_both := .N, by = c('cluster','clinical_type')]
-cur[,perc_clin := nr_both/.N, by = 'clinical_type']
-cur[,perc_clus := nr_both/.N, by = 'cluster']
-
-cur = unique(cur[,c('cluster','clinical_type','perc_clin','perc_clus')])
-cur[,test := sum(perc_clin),by = 'clinical_type']
-#plot
-p4 <- ggplot(cur,aes(y=cluster,x=clinical_type))+
-  geom_point(aes(colour = perc_clus, 
-                 size =perc_clin))  +   
-scale_color_gradient2(low = "blue",  
-                     mid = "white",
-                     high = "red",
-                     name = "Fraction of celltype in clinical group")+       
-scale_size(range = c(1, 15),name = "Fraction of clinical in celltype group") +
-      theme(axis.text.y=element_text(color = mycols_basel[hr$order]),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-panel.background = element_blank(), axis.line = element_line(colour = "black"))
-
-pdf('/home/jana/Desktop/R_dat/CT_clinical_groups_flipped.pdf',width = 20, height = 10)
-p4
-dev.off()
+#Check
+bubble = unique(bubble[,c('cluster','clinical_type','perc_clin','perc_clus')])
+bubble[,test := sum(perc_clin),by = 'clinical_type']
 
 
 #Beautiful cluster color opacity change plot
-p4 <- ggplot(cur,aes(y=cluster,x=clinical_type))+
+p4 <- ggplot(bubble,aes(y=cluster,x=clinical_type))+
   geom_point(aes(color = cluster,
                  alpha = perc_clus, 
                  size =perc_clin))  +   
@@ -845,10 +474,166 @@ p4
 dev.off()
 ```
 
+Replace PG clusters with curated metaclusters to continue working with the metaclusters, HARDCODED!
+```{r}
+
+#Aggregate to meta clusters according to groups in hierarchically clustered heatmap (including some reassignments based on biological knowledge).
+#The order of the numbers corresponds to the heatmap of the metaclusters (bellow)
+
+#Keept stromal and immune cells as individual PG clusters
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(25)] = 1 #B cells
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(19)] = 2 #B and T cells
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(2)] = 3 #T cell
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(6)] = 4 #Macrophages
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(38)] = 5 #T cell
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(70)] = 6 #Macrophage
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(10)] = 7 #Endothelial
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(3)] = 8 #Vimentin hi
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(4)] = 9 #small circular
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(1)] = 10 #small elongated
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(15)] = 11 #Fibronectin hi
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(71)] = 12 #larger elongated
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(36)] = 13 #SMA hi Vimentin
+
+#Tumor cell metaclusters
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(11)] = 14 #hypoxic
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(66,43,32,49,56)] = 15 #apoptotic
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(35,68,8,60)] = 16 #proliferative
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(23,33,26)] = 17 #p53 EGFR
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(47,57,17,50)] = 18 #Basal CK
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(16,69,67)] = 27 #Myoepithalial
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(52,28,64,45)] = 19 #CK7 CK hi Cadherin
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(55,13,40,51,42)] = 20 #CK7 CK
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(59,61,14,48,62,20,24)] = 23 #HR hi CK
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(39,9,12,29,34,22)] = 25 #HR low CK
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(21,65,7)] = 21 #Epithelial low
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(18,46,53,37,31)] = 24 #CK HR
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(58,41,5,27,30)] = 22 #CK low HR low
+cluster_pheno$cluster_new[cluster_pheno$cluster %in% c(44,54,63)] = 26 #CK low HR hi p53
+
+cluster_pheno$cluster = cluster_pheno$cluster_new
+cluster_pheno$cluster_new = NULL
+```
+
+Display PG/meta clusters on tSNE (Figure 1)
+```{r}
+
+setkey(dat, id)
+setkey(tsne,id)
+setkey(cluster_pheno,id)
+
+cluster_pheno$cluster <- factor(cluster_pheno$cluster, levels = cluster_order_basel_meta)
+
+p = subset(dat, !duplicated(id))[tsne][cluster_pheno] %>% 
+  ggplot(aes(x=bh_V1, y=bh_V2))+
+  geom_point(size=0.3, alpha=1, aes(color=cluster))+
+  labs(colour="Clusters")+
+  scale_color_manual(values = mycols_basel_meta[as.numeric(cluster_order_basel_meta)])+ 
+  ggtitle('Metaclusters')+
+  guides(color=guide_legend(override.aes=list(size=5)))+
+  theme(strip.background = element_blank(),
+        panel.background=element_rect(fill='white', colour = 'black'),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank(),
+        legend.key = element_blank())
+
+pdf(file="tsne.pdf", width=10, height=10)
+p
+dev.off()
+```
+
+Plot heatmap of the metaclusters mean/median marker expressions
+```{r}
+#Remove liver controls from further analysis
+dat = dat[!str_detect(dat$core,'Liver'),]
+cluster_pheno = cluster_pheno[!str_detect(cluster_pheno$id,'Liver'),]
+cluster_pheno$cluster <- factor(cluster_pheno$cluster, levels = cluster_order_basel_meta)
+
+#censor data
+censor_val = 0.99
+dat[, c_counts := bbRtools::censor_dat(mc_counts,censor_val), by=channel]
+#dat[, sc_counts := scale(mc_counts,censor_val), by=channel]
+
+set.seed(2)
+summary_dat = dat[cluster_pheno][ channel %in% good_channels ,list(
+  median_val = median(c_counts),
+  mean_val= mean(c_counts),
+  std_val = pracma::std(c_counts),
+  cell_cluster=.N),
+  by=.(channel,cluster)]
+
+hm_dat = dcast.data.table(data =summary_dat, formula = 'cluster ~ channel',
+                          value.var = 'mean_val') #can be exchanged for 'median_val' 
+# Row names
+trownames = hm_dat$cluster
+
+# Convert to a matrix
+hm_dat = as.matrix(hm_dat[,-1,with=F])
+row.names(hm_dat) = trownames
+```
+
+Plot the heatmap with z-scoring per marker
+```{r}
+# Set color map
+cols = rev(brewer.pal(11,'Spectral'))
+cmap = colorRampPalette(cols)
+
+# Hierarchical clustering on rows with Ward's linkage
+tdist = as.dist(1-cor(t(hm_dat), method="spearman"))
+hr <- hclust(tdist, method="ward.D2")
+co_r <- cba::order.optimal(tdist, hr$merge)
+hr$merge = co_r$merge
+hr$order = co_r$order
+
+#Save cluster order from heatmap
+order_heatmap = row.names(hm_dat)[hr$order]
+
+# Hierarchical clustering on columns with Ward's linkage
+tdist = as.dist(1-cor((hm_dat), method="spearman"))
+hc <- hclust(tdist, method="ward.D2")
+co_c <- cba::order.optimal(tdist, hc$merge)
+hc$merge = co_c$merge
+hc$order = co_c$order
+
+# Z-score data
+p_dat = scale(hm_dat)
+
+# Censor z-score at 2
+p_dat[p_dat > 2] =2
+p_dat[p_dat < -2] =-2
+
+
+pdf(file="/home/jana/Desktop/R_dat/heatmap.pdf", width=10, height=10)
+
+heatmap.2(p_dat,
+          scale ='none',
+          trace = "none",
+          col=cmap(75),
+          Rowv=as.dendrogram(hr),
+          Colv=as.dendrogram(hc),
+          density.info ='none',
+          cexRow=0.6,
+          cexCol=0.6,
+          margins=c(4,8),
+          xlab = 'Markers',
+          ylab ='Cluster',
+          main = 'PG_norm_slide',
+          colRow = mycols_basel_meta)
+
+dev.off()
+
+#Write out cluster data for aligning with other cohort in separate pipeline
+fwrite(data.table(hm_dat),'/BaselTMA/output/hm_dat_basel.csv',col.names = T,row.names = T)
+fwrite(data.table(hr$labels[hr$order]),'/BaselTMA/output/ordered_labels_basel.csv',col.names = F)
+fwrite(data.table(hc$labels[hc$order]),'/BaselTMA/output/ordered_channels_basel.csv',col.names = T)
+
+```
+
 Prepare data for patient clustering
 ```{r}
 # Count number of cells per core and cluster and get channel means per core and cluster
-dat_cluster_caseID = dat[cluster_pheno][, .(cluster_mean = mean(mc_counts), ncells=.N),by=.(core, channel, cluster)]
+dat_cluster_caseID = dat[cluster_pheno][, .(ncells=.N),by=.(core, channel, cluster)]
 dat_cluster_caseID[, id:=paste(cluster, core)]
 setkey(dat_cluster_caseID, 'id')
 
@@ -866,20 +651,21 @@ Sample_metadata$histology = unlist(lapply(strsplit(Sample_metadata$histology,'-'
 Sample_metadata$histology = trimws(Sample_metadata$histology, which = c("right"))
 
 # Merge with metadata
-cluster_dat = merge(cluster_dat, Sample_metadata[!is.na(Sample_metadata$area),], by = c('core'), all.x = TRUE, allow.cartesian=TRUE, rm.NA = TRUE)
+cluster_dat = merge(cluster_dat, Sample_metadata, by = c('core'), all.x = TRUE, allow.cartesian=TRUE, rm.NA = TRUE)
 ```
 
 Kick out control and normal samples for tumor sample only analyses bellow
 ```{r}
-cluster_dat_tumors <- cluster_dat[!is.na(cluster_dat$patientcode),]
+cluster_dat_tumors <- cluster_dat[!is.na(cluster_dat$PID),]
 cluster_dat_tumors <- cluster_dat_tumors[!cluster_dat_tumors$diseasestatus == 'non-tumor',]
+cluster_dat_tumors$PID = as.character(cluster_dat_tumors$PID)
 ```
 
 In case normal and control are kept, name them accordingly
 ```{r}
 
 #Non existent patientcodes are control samples
-cluster_dat$patientcode[is.na(cluster_dat$patientcode)] <- 'CONTROL'
+cluster_dat$PID[is.na(cluster_dat$PID)] <- 'CONTROL'
 cluster_dat$grade[is.na(cluster_dat$grade)] <- 'CONTROL'
 
 cluster_dat$grade[cluster_dat$diseasestatus == 'non-tumor'] <- 'NORMAL'
@@ -893,30 +679,11 @@ Plot amount of patients that contain cells of each Phenograph/meta- cluster
 ```{r}
 
 pdf(file="/home/jana/Desktop/R_dat/patients_per_cluster.pdf", width=20, height=10)
-ggplot(data=unique(cluster_dat[,c('cluster','patientcode')]), aes(factor(cluster,levels = hr$labels[hr$order]),fill = cluster)) + 
+ggplot(data=unique(cluster_dat[,c('cluster','PID')]), aes(factor(cluster,levels = hr$labels[hr$order]),fill = cluster)) + 
   stat_count()+
-  scale_fill_manual("Clusters",values =  mycols_basel_meta) #mycols_basel for small clusters
+  scale_fill_manual("Clusters",values =  mycols_basel_meta)
   
 dev.off()
-```
-
-Plot heatmap of percentage of cells of each patient contributed from each SC cluster (sum over cluster percentages of each patientcode yields 100)
-```{r}
-
-p <- ggplot(cluster_dat, aes(x=factor(cluster,levels = hr$labels[hr$order]), y=as.factor(patientcode))) + 
-  geom_tile(aes(fill = perc_cluster)) + #replace with perc_cells for percentage of patient cells in each cluster
-  scale_fill_gradient(low = "white", high = "steelblue")+
-  scale_y_discrete("Patients", expand = c(0,0))+
-  scale_x_discrete("Clusters")+
-  #coord_fixed(ratio = 10)+
-  #theme(panel.background = element_blank())+
-  theme(axis.text.x = element_text(colour = mycols_basel_meta[hr$order], angle = 90))#mycols_basel for small clusters
-
-#Save to pdf in appropriate size
-pdf(file='/home/jana/Desktop/R_dat/Perc_cluster_per_patient.pdf', width=20, height=70)
-p
-dev.off()
-
 ```
 
 Patient clustering prepare data
@@ -925,18 +692,18 @@ Patient clustering prepare data
 cluster_dat_tumors = cluster_dat_tumors[cluster_dat_tumors$cluster %in% c(14:27),]
 
 # Prepare for patient clustering based on proportions (fractions) of contained tumor cell types (out of total tumor cells of a patient)
-cluster_dat_tumors <- subset(cluster_dat_tumors, by="patientcode")
-cluster_dat_tumors[, tot_patient := sum(ncells), by=patientcode]
+cluster_dat_tumors <- subset(cluster_dat_tumors, by="PID")
+cluster_dat_tumors[, tot_patient := sum(ncells), by=PID]
 cluster_dat_tumors[, frac_cells_amount_cells_patient := ncells/tot_patient, by=.(cluster)]
 cluster_dat_tumors[, cluster_by_area := ncells/area, by=c('core','cluster')]
 
 # Check that sum adds up to 1 if fraction:
 test <- unique(cluster_dat_tumors)
-test <- test[,sum := sum(frac_cells_amount_cells_patient),by = .(patientcode)]
+test <- test[,sum := sum(frac_cells_amount_cells_patient),by = .(PID)]
 
 #Relevant columns for patient clustering
-patient_dat_vars <- cluster_dat_tumors[,c("patientcode","cluster","frac_cells_amount_cells_patient")] 
-colnames(patient_dat_vars)<-c("patientcode","channel","value")
+patient_dat_vars <- cluster_dat_tumors[,c("PID","cluster","frac_cells_amount_cells_patient")] 
+colnames(patient_dat_vars)<-c("PID","channel","value")
 patient_dat_vars<-transform(patient_dat_vars, channel = as.character(channel))
 
 ```
@@ -944,220 +711,73 @@ patient_dat_vars<-transform(patient_dat_vars, channel = as.character(channel))
 Hierarchical clustering of patients (for visualization only: on stacked barplot bellow)
 ```{r}
 # Hierarchical clustering of patients based on tumor celltype fractions
-patient_dat_vars = patient_dat_vars[order(patientcode)]
-patient_wide = dcast.data.table(data =patient_dat_vars, formula = 'patientcode ~ channel',
+patient_dat_vars = patient_dat_vars[order(PID)]
+patient_wide = dcast.data.table(data =patient_dat_vars, formula = 'PID ~ channel',
                           value.var = 'value',fun.aggregate = mean,fill = 0)
 
 dd <- dist(scale(patient_wide[,2:ncol(patient_wide)]), method = "euclidean")
 hc <- hclust(dd, method = "ward.D2")
 
 
-#write out for matching
-fwrite(patient_wide,'/home/jana/Desktop/R_dat/patient_wide_basel.csv',col.names  = T)
-
+#Write out for SCP patient subgroup matching with other cohort (other pipeline)
+fwrite(patient_wide,'patient_wide_basel.csv',col.names  = T)
 ```
 
 
 Phenograph clustering of patients based on tumor celltype fractions
 ```{r}
 #Exclude 3 outlier patients dominated by celltype 26 (too few for separate analysis), don't want to mix them into other patientgroups/ affect patient clustering
-patient_dat_vars_perc = patient_dat_vars[order(patientcode)]
-patient_dat_vars_perc_cut = patient_dat_vars_perc[!patient_dat_vars_perc$patientcode %in% c('UB_SX_000429','UB_SX_000153','UB_SX_000443'),]
-patient_wide = dcast.data.table(data =patient_dat_vars_perc_cut, formula = 'patientcode ~ channel',
-                          value.var = 'value',fun.aggregate = mean , fill = 0) #in rare occasions where more than 1 image per patient take mean
+patient_dat_vars_perc = patient_dat_vars[order(PID)]
+patient_dat_vars_perc_cut = patient_dat_vars_perc[!patient_dat_vars_perc$PID %in% c('93','276','200'),]
 
-#Run Phenograph of patients based on tumor cell type fractions, with k = 7 (low number of nearest neighbors to not mix patients dominated by different cell types)
+#In rare occasions where acquisition was split more than 1 image per patient: take mean
+patient_wide = dcast.data.table(data =patient_dat_vars_perc_cut, formula = 'PID ~ channel',
+                          value.var = 'value',fun.aggregate = mean , fill = 0) 
+
+#Run Phenograph of patients based on tumor cell type fractions (low number of nearest neighbors to not mix patients dominated by different cell types)
 patient_pheno <- cytofkit::Rphenograph(as.matrix(patient_wide[,-c(1)]), k = 8)
-patient_pheno = patient_pheno$membership
-patient_pheno = cbind(patient_wide[,1],patient_pheno)
-
-#Meta grouping of patient groups with same clearly predominant tumor cell type that got split up because of low k
-meta_patient_clustering = patient_pheno
+meta_patient_clustering = cbind(patient_wide[,1],igraph::membership(patient_pheno))
+colnames(meta_patient_clustering)[2] = "patient_pheno"
 
 #Renumber patient groups for paper number order
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(11)] = 1
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(7)] = 2
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(15)] = 3
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(3)] = 4
-#5 is NA because excluded form downstream analysis (3 images above), sometimes still used for visualization as separate group though
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(8)] = 5
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(17)] = 6
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(5)] = 7
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(13)] = 8
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(2)] = 9
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(1)] = 10
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(10)] = 11
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(16)] = 12
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(14)] = 13
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(4)] = 14
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(12)] = 15
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(6)] = 16
-meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(9)] = 17
+meta_patient_clustering$patient_pheno = mapvalues(meta_patient_clustering$patient_pheno,c(7,12,9,14,13,4,10,8,11,5,6,15,17,3,2,16,1),c(1:17))
 
-meta_patient_clustering$patient_pheno = meta_patient_clustering$patient_pheno_new
-meta_patient_clustering$patient_pheno_new = NULL
-
-
-# # #Meta grouping of patient groups with same clearly predominant tumor cell type that got split up because of low k
-# # meta_patient_clustering = patient_pheno
-# # meta_patient_clustering[meta_patient_clustering$patient_pheno %in% c(14),'patient_pheno'] = 7
-# # meta_patient_clustering[meta_patient_clustering$patient_pheno %in% c(16),'patient_pheno'] = 2
-# 
-# #Meta grouping of patient groups with same clearly predominant tumor cell type that got split up because of low k
-# meta_patient_clustering = patient_pheno
-# meta_patient_clustering[meta_patient_clustering$patient_pheno %in% c(3),'patient_pheno'] = 7
-# meta_patient_clustering[meta_patient_clustering$patient_pheno %in% c(14),'patient_pheno'] = 1
-# 
-# #Renumber patient groups for paper number order
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(6)] = 1
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(10)] = 2
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(13)] = 3
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(4)] = 4
-# #5 is NA because excluded form downstream analysis (3 images above), sometimes still used for visualization as separate group though
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(18)] = 6
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(7)] = 7
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(8)] = 8
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(1)] = 9
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(15)] = 10
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(2)] = 11
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(5)] = 12
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(9)] = 13
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(11)] = 14
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(12)] = 15
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(16)] = 16
-# meta_patient_clustering$patient_pheno_new[meta_patient_clustering$patient_pheno %in% c(17)] = 17
-# 
-# meta_patient_clustering$patient_pheno = meta_patient_clustering$patient_pheno_new
-# meta_patient_clustering$patient_pheno_new = NULL
-
-
-# #Write out for import into histoCAT
-# fwrite(meta_patient_clustering, file='/home/jana/Desktop/R_dat/patient_groups_tumors_meta.csv', col.names = TRUE)
-
+#Write out for other pipelines
+fwrite(meta_patient_clustering, file='SCP_patientgroups.csv', col.names = TRUE)
 ```
 
-Correlate cell type fraction with shannon index
+Display patientgroups on single-cell tSNE (only after variable meta_patient_clustering has been assigned bellow)
 ```{r}
+dat_meta = merge(dat_meta, tsne, by = 'id')
+dat_meta = merge(dat_meta, meta_patient_clustering, by = 'patientcode', all.x = TRUE)
+dat_meta$patient_pheno[dat_meta$diseasestatus != 'tumor'] = 'normal'
+dat_meta = unique(dat_meta[,-c('channel','mc_counts')])
 
-dat_cut_tumors <- unique(cluster_dat_tumors[,c("core","cluster","ncells","patientcode")])
+#For visualizarion, add back in the patient group that was excluded from analysis because only 3 patients
+dat_meta$patient_pheno[is.na(dat_meta$patient_pheno)] = 18 
 
+p = dat_meta %>%
+  ggplot(aes(x=bh_V1, y=bh_V2))+
+  geom_point(size=0.3, alpha=1, aes(color=factor(patient_pheno, levels = c(1:18,'normal'))))+
+  labs(colour="Clusters")+
+  scale_color_manual(values = c(mycols_patient[c(1:18)],'black'))+
+  ggtitle('Patientgroups')+
+  guides(color=guide_legend(override.aes=list(size=5)))+
+  theme(strip.background = element_blank(),
+        panel.background=element_rect(fill='white', colour = 'black'),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank(),
+        legend.key = element_blank())
 
-#split into patients
-ind_patients <- split( dat_cut_tumors , f = dat_cut_tumors$patientcode )
-all_patient = lapply(ind_patients, function(x){x[order(x$core),]})
-ind_cores_tumors <- lapply(all_patient, function(x){split( x , f = x$core )})
-
-shannon_patients = lapply(ind_cores_tumors, function(y){lapply(y, function(x){entropy.ChaoShen(x$ncells)})})
-sum_shannon <- lapply(shannon_patients,function(x){Reduce("+",x)})
-length_shannon <- lapply(shannon_patients,function(x){length(x)})
-mean_shannon_patient <- unlist(t(sum_shannon))/unlist(t(length_shannon))
-
-shannon_patient = data.table(unlist(names(ind_cores_tumors)))
-names(shannon_patient) = "patientcode"
-shannon_patient$shannon = mean_shannon_patient
-
-#Get patient wide with absolute counts/densities
-patient_dat_vars_abs <- cluster_dat_tumors[,c("patientcode","cluster","cluster_by_area")] 
-colnames(patient_dat_vars_abs)<-c("patientcode","channel","value")
-patient_dat_vars_abs<-transform(patient_dat_vars_abs, channel = as.character(channel))
-patient_dat_vars_abs = patient_dat_vars_abs[order(patientcode)]
-patient_dat_vars_abs[, value := bbRtools::censor_dat(value,0.99)]
-patient_wide_abs = dcast.data.table(data =patient_dat_vars_abs, formula = 'patientcode ~ channel',
-                          value.var = 'value',fun.aggregate = mean,fill = 0)
-
-shannon_patient = merge(shannon_patient, patient_wide_abs, by = 'patientcode')
-
-
-my.formula <- y ~ x
-
-
-for (i in 3:ncol(shannon_patient)){
-    cur = shannon_patient[,c(2,i),with = F]
-    name_cur = names(shannon_patient)[i]
-    cur = cur[as.vector(cur[,c(name_cur),with = F] > 0.0005),]
-    p[[i]] = ggplot(cur, aes_string(x=cur$shannon, y=as.matrix(cur[,c(name_cur),with = F] )))+
-        geom_point(aes(alpha=1, size=1))+ #color=as.factor(GRADE),
-        geom_smooth(method = "lm")+
-        stat_poly_eq(formula = my.formula, 
-                     aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-                     parse = TRUE) +
-        theme_bw()+
-        xlab("Shannon") + ylab(paste0("Celltype_",name_cur))
-}
-
-pdf('/home/jana/Desktop/R_dat/celltypes_shannon_corr_noZeros.pdf',width = 30, height = 40)
-do.call("grid.arrange", c(p[3:length(p)], ncol=3))
-dev.off()
-
-
-
-#Shannon per patientgroup
-
-
-#split into patients
-ind_patients <- split( dat_cut_tumors , f = dat_cut_tumors$patientcode )
-all_patient = lapply(ind_patients, function(x){x[order(x$core),]})
-ind_cores_tumors <- lapply(all_patient, function(x){split( x , f = x$core )})
-
-shannon_patients = lapply(ind_cores_tumors, function(y){lapply(y, function(x){entropy.ChaoShen(x$ncells)})})
-sum_shannon <- lapply(shannon_patients,function(x){Reduce("+",x)})
-length_shannon <- lapply(shannon_patients,function(x){length(x)})
-mean_shannon_patient <- unlist(t(sum_shannon))/unlist(t(length_shannon))
-
-shannon_patient = data.table(unlist(names(ind_cores_tumors)))
-names(shannon_patient) = "patientcode"
-shannon_patient$shannon = mean_shannon_patient
-shannon_patient = merge(shannon_patient, meta_patient_clustering,by = 'patientcode')
-#shannon_patient[,shannon:= censor_dat(shannon),by = 'patient_pheno']
-
-
-#HR
-shannon_patient = shannon_patient[patient_pheno %in% c(1:3,11,16),]
-
-#Pinks
-shannon_patient = shannon_patient[patient_pheno %in% c(4:7,9:10),]
-
-
-p <- ggplot(shannon_patient, aes(x=factor(patient_pheno), y=shannon)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("Shannonentropy of core")+
-  xlab("Patientgroup")+
-  theme(panel.background = element_blank())+
-  ggtitle('Patients Shannon')
-
-pdf('/home/jana/Desktop/R_dat/CoreShannon_Patientgroup_basel.pdf')
+pdf(file="patientgroupsonSCtsne.pdf")
 p
 dev.off()
-
-
-
-#Shannon for mArcs
-
-shannon_patient = merge(shannon_patient, ME,by = 'patientcode')
-
-
-p <- ggplot(shannon_patient, aes(x=factor(groups), y=shannon)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("Shannonentropy of core")+
-  xlab("Patientgroup")+
-  theme(panel.background = element_blank())+
-  ggtitle('Patients Shannon')
-
-pdf('/home/jana/Desktop/R_dat/CoreShannon_mArc_basel.pdf')
-p
-dev.off()
-
 ```
 
 Redo counts with densities instead of fractions for visualization
 ```{r}
-cluster_dat_tumors <- cluster_dat[!is.na(cluster_dat$patientcode),]
+cluster_dat_tumors <- cluster_dat[!is.na(cluster_dat$PID),]
 cluster_dat_tumors <- cluster_dat_tumors[!cluster_dat_tumors$diseasestatus == 'non-tumor',]
 
 # #Uncomment in case all stromal or all tumor (14:26) cell types should have same ID (for TME neighborhood analysis plots)
@@ -1167,68 +787,50 @@ cluster_dat_tumors <- cluster_dat_tumors[!cluster_dat_tumors$diseasestatus == 'n
 # cluster_dat_tumors = unique(cluster_dat_tumors)
 
 # Same as above but this time use cluster_by_area for densities of the different cell types per patient
-cluster_dat_tumors <- subset(cluster_dat_tumors, by="patientcode")
-cluster_dat_tumors[, tot_patient := sum(ncells), by=patientcode]
+cluster_dat_tumors <- subset(cluster_dat_tumors, by="PID")
+cluster_dat_tumors[, tot_patient := sum(ncells), by=PID]
 cluster_dat_tumors[, frac_cells_amount_cells_patient := ncells/tot_patient, by=.(cluster)]
 cluster_dat_tumors[, cluster_by_area := ncells/area, by=c('core','cluster')]
 
-patient_dat_vars_densities <- cluster_dat_tumors[,c("patientcode","cluster","cluster_by_area")] 
-colnames(patient_dat_vars_densities)<-c("patientcode","channel","value")
+patient_dat_vars_densities <- cluster_dat_tumors[,c("PID","cluster","cluster_by_area")] 
+colnames(patient_dat_vars_densities)<-c("PID","channel","value")
 patient_dat_vars_densities<-transform(patient_dat_vars_densities, channel = as.character(channel))
 
 # Merge cluster_dat_tumors with meta_patient_clustering from above to have info to which patient group belongs
-cluster_dat_tumors = merge(cluster_dat_tumors, meta_patient_clustering, by = c('patientcode'), all.x = TRUE, allow.cartesian=TRUE, rm.NA = TRUE)
+cluster_dat_tumors = merge(cluster_dat_tumors, meta_patient_clustering, by = c('PID'), all.x = TRUE, allow.cartesian=TRUE, rm.NA = TRUE)
 cluster_dat_tumors$patient_pheno[is.na(cluster_dat_tumors$patient_pheno)] = 18 #Taken in for visualizations but excluded from analysis because only 3 patients
 
-patient_wide_densities = dcast.data.table(data =patient_dat_vars_densities, formula = 'patientcode ~ channel',
+patient_wide_densities = dcast.data.table(data =patient_dat_vars_densities, formula = 'PID ~ channel',
                           value.var = 'value',fun.aggregate = mean , fill = 0)
 
 ```
 
-
-
-Scatterplots to investigate whether specific marker expression combinations exist on the single cell level and not just cluster
+Hierarchically clustered stacked barplot of patients' cell type metacluster densities and labels colored by SCP patient subgroup (Figure 3)
 ```{r}
-cur_dat = dcast.data.table(dat, formula = 'id + core ~ channel', value.var = 'c_counts') 
-cur_dat = cur_dat[cluster_pheno]
-cur_dat = merge(cur_dat,Sample_metadata, by = "core")
-cur_dat = merge(cur_dat,meta_patient_clustering, by = "patientcode",all = TRUE)
-cur_dat = cur_dat[cluster == 27,]
-
-png('/home/jana/Desktop/R_dat/cluster27_panCKCK5.png')
-ggplot(cur_dat)+
-  geom_point(aes(x = `971099Nd144Di Cytoker`, y = `234832Lu175Di panCyto`))+
-    geom_density2d(aes(x = `971099Nd144Di Cytoker`, y = `234832Lu175Di panCyto`)) + 
-  ggtitle('LuminalBasalCK')
-dev.off()
-```
-
-Patient clustered (hierarchical clustering from above) stacked barplot, tumor samples only with meta cluster cell type densities and labels colored by Phenograph patient group
-```{r}
-#On rare occasions where there are more than one cores per patient take mean of densities to display for patients
-cluster_dat_tumors$cluster = factor(cluster_dat_tumors$cluster, levels = cluster_order_basel_meta) #cluster_order_basel for small clusters
-cluster_dat_tumors[, perc_cells_patient := ncells*100/sum(ncells), by=patientcode]
-cluster_dat_tumors[, area_cells_patient := mean(cluster_by_area), by=c('patientcode','cluster')]
-cluster_dat_tumors = cluster_dat_tumors[order(patientcode)]
+#On rare occasions where there are more than one cores per patient, take mean of densities to display for patients
+cluster_dat_tumors$cluster = factor(cluster_dat_tumors$cluster, levels = cluster_order_basel_meta)
+cluster_dat_tumors[, perc_cells_patient := ncells*100/sum(ncells), by=PID]
+cluster_dat_tumors[, area_cells_patient := mean(cluster_by_area), by=c('PID','cluster')]
+cluster_dat_tumors = cluster_dat_tumors[order(PID)]
 
 #Grade colors (in case grade should be visualized as vertical bar)
-patient_grade_orig = cluster_dat_tumors[,c('patientcode','grade')]
+patient_grade_orig = cluster_dat_tumors[,c('PID','grade')]
 patient_grade = unique(patient_grade_orig)
-patient_grade = patient_grade[!duplicated(patient_grade$patientcode),]
+patient_grade = patient_grade[!duplicated(patient_grade$PID),]
 patient_grade_all = patient_grade[hc$order]
 grade_order = patient_grade_all$grade
 
 #Patient cluster colors (for colors of patient names)
-patient_cluster_orig = cluster_dat_tumors[,c('patientcode','patient_pheno')]
+patient_cluster_orig = cluster_dat_tumors[,c('PID','patient_pheno')]
 patient_cluster = unique(patient_cluster_orig)
-patient_cluster = patient_cluster[!duplicated(patient_cluster$patientcode),]
+patient_cluster = patient_cluster[!duplicated(patient_cluster$PID),]
 patient_cluster_all = patient_cluster[hc$order]
 cluster_order = patient_cluster_all$patient_pheno
 
 #Clinical type colors (for clinical type vertical bar)
-patient_clinical_orig = cluster_dat_tumors[,c('patientcode','clinical_type')]
+patient_clinical_orig = cluster_dat_tumors[,c('PID','clinical_type')]
 patient_clinical = unique(patient_clinical_orig)
-patient_clinical = patient_clinical[!duplicated(patient_clinical$patientcode),]
+patient_clinical = patient_clinical[!duplicated(patient_clinical$PID),]
 patient_clinical_all = patient_clinical[hc$order]
 patient_clinical_all$clinical_type = factor(patient_clinical_all$clinical_type)
 patient_clinical_all$clinical_type[patient_clinical_all$clinical_type == ""] = NA
@@ -1237,12 +839,12 @@ clinical_order = patient_clinical_all$clinical_type
 #Plot:
 
 #Stacked bar plot with cell type density colors per patient and labels colored by SC patient group
-cut = cluster_dat_tumors[,c('patientcode','cluster','area_cells_patient')]
+cut = cluster_dat_tumors[,c('PID','cluster','area_cells_patient')]
 cut = unique(cut)
-p <- ggplot(cut, aes(x=patientcode, y=area_cells_patient, fill=as.factor(cluster))) + 
+p <- ggplot(cut, aes(x=PID, y=area_cells_patient, fill=as.factor(cluster))) + 
   geom_bar(stat='identity',show.legend = TRUE)+
   scale_fill_manual("Clusters",values =  mycols_basel_meta[as.numeric(cluster_order_basel_meta)])+ #mycols_basel for small clusters
-  scale_x_discrete(limits = patient_cluster_all$patientcode)+
+  scale_x_discrete(limits = patient_cluster_all$PID)+
   labs(fill = "Clusters")+
   coord_flip()+
   xlab("Patient")+
@@ -1264,9 +866,8 @@ p3 <- ggplot(patient_clinical_all, aes(x=1,y=c(1:length(patient_clinical_all$cli
           line = element_blank(),
           legend.position="none")
 
-library('ggdendro')
 #Dendrogram of hierarchical clustering
-p2 <- ggdendrogram(hc, rotate = TRUE,labels = TRUE, theme_dendro = TRUE, leaf_labels = FALSE)+
+p2 <- ggdendro::ggdendrogram(hc, rotate = TRUE,labels = TRUE, theme_dendro = TRUE, leaf_labels = FALSE)+
   theme(axis.title.x=element_blank(),
           axis.text.x=element_blank(),
           axis.ticks.x=element_blank(),
@@ -1280,40 +881,49 @@ p4 <- ggdraw() +
      draw_plot(p ,0.5, 0.0355, 0.5, 0.926)+
      draw_plot(p3,0.45,0,0.05,1)
 
-pdf(file="/home/jana/Desktop/R_dat/test.pdf", width=30, height=50)
+pdf(file="SCP_sbp.pdf", width=30, height=50)
 p4
 dev.off()
 
 ```
 
-#Read in fragmentation scores
+#Read in fragmentation score generated in Matlab script based on average tumor community sizes (to plot next to stacked bar plot)(Figure 3)
 ```{r}
-frag = fread('/home/jana/Desktop/R_dat/fragmentation.csv',header = T)
+frag = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/fragmentation_scores.csv',header = T)
 
-
-test = unique(frag$core)
-split_core = strsplit(frag$core,'_', fixed = TRUE)
-frag$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
-#Replace the ones that don't need acquisition number again
-short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
-duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
-in_cores_index = unlist(lapply(unique(frag$core)[duplicate_idx],function(x){which(frag$core %in% x)}))
-frag$core[setdiff(1:length(frag$core),in_cores_index)] = unlist(lapply(strsplit(frag$core[setdiff(1:length(frag$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
-
-#Delete zeros from core names
-frag$core = unlist(lapply(frag$core,function(x){gsub("000","",x)}))
+# #Clean core names so they match loaded data. Already doen for provided data, only necessary when importing new fragmentation scores from histoCAT.
+# test = unique(frag$core)
+# split_core = strsplit(frag$core,'_', fixed = TRUE)
+# frag$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
+# #Replace the ones that don't need acquisition number again
+# short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
+# duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
+# in_cores_index = unlist(lapply(unique(frag$core)[duplicate_idx],function(x){which(frag$core %in% x)}))
+# frag$core[setdiff(1:length(frag$core),in_cores_index)] = unlist(lapply(strsplit(frag$core[setdiff(1:length(frag$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
+# #Delete zeros from core names
+# frag$core = unlist(lapply(frag$core,function(x){gsub("000","",x)}))
 
 #Merge with metadata
-frag = merge(frag, unique(Sample_metadata[,c('core','patientcode')]),by = 'core')
+frag = merge(frag, unique(Sample_metadata[,c('core','PID')]),by = 'core')
+frag[,MeanSize_log := log(MeanSize)]
+frag[,frag_score := ((MeanSize_log - min(MeanSize_log))/(max(MeanSize_log) - min(MeanSize_log)))]
 
-#Order according to Basel
-frag =  frag[order(match(frag$patientcode,patient_cluster_all$patientcode))]
-
+#Normalize between 0 and 1
 frag[,frag_score := ((MeanSize - min(MeanSize))/(max(MeanSize) - min(MeanSize)))]
 
+#Set not present images NA
+missing = patient_cluster_all$PID[!patient_cluster_all$PID %in% frag$PID]
+frag = rbind(frag,data.frame(PID = missing,frag_score = rep(NA,length(missing)),MeanSize = rep(NA,length(missing)),MeanSize_log = rep(NA,length(missing)),core = rep(NA,length(missing))))
+frag = frag[frag$PID %in% patient_cluster_all$PID,]
+frag[,patient_frag := mean(frag_score),by = 'PID']
+frag = unique(frag[,c('PID','patient_frag')])
+
+#Order according to stacked bar plot above
+frag =  frag[order(match(frag$PID,patient_cluster_all$PID))]
+
 #Fragmentation colorbar
-p7 <- ggplot(frag, aes(x=1,y=c(1:length(frag$frag_score))))+
-      geom_tile(aes( fill=frag$frag_score))+
+p7 <- ggplot(frag, aes(x=1,y=c(1:length(frag$patient_frag))))+
+      geom_tile(aes( fill=frag$patient_frag))+
   scale_fill_gradient2(low = "blue", mid = "white", high = "purple")+
     theme(axis.title.x=element_blank(),
           axis.text.x=element_blank(),
@@ -1324,6 +934,7 @@ p7 <- ggplot(frag, aes(x=1,y=c(1:length(frag$frag_score))))+
           line = element_blank(),
           legend.position="none")
 
+#Align with stacked bar plot from above
 p4 <- ggdraw() +
      draw_plot(p2 + scale_y_reverse(), 0, 0.001, 0.40, 0.998) +
      draw_plot(p ,0.5, 0.0355, 0.5, 0.926)+
@@ -1331,124 +942,33 @@ p4 <- ggdraw() +
     draw_plot(p7,0.42,0,0.05,1)
 
 
-pdf(file="/home/jana/Desktop/R_dat/fragmentationscore_test.pdf", width=30, height=50)
+pdf(file="fragmentationscore_sbp.pdf", width=30, height=50)
 p4
 dev.off()
 ```
 
-
-#Read in nodules dat
-```{r}
-
-nodules = fread('/home/jana/Desktop/R_dat/nodules_tumor.csv',header = T)
-
-
-test = unique(nodules$core)
-split_core = strsplit(nodules$core,'_', fixed = TRUE)
-nodules$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
-#Replace the ones that don't need acquisition number again
-short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
-duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
-in_cores_index = unlist(lapply(unique(nodules$core)[duplicate_idx],function(x){which(nodules$core %in% x)}))
-nodules$core[setdiff(1:length(nodules$core),in_cores_index)] = unlist(lapply(strsplit(nodules$core[setdiff(1:length(frag$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
-
-#Delete zeros from core names
-nodules$core = unlist(lapply(nodules$core,function(x){gsub("000","",x)}))
-
-nodules[,ncells := .N , by = c('Community','Pheno')]
-nodules[,perc_cluster := ncells/sum(ncells), by = 'Community']
-nodules[,perc_comm := ncells/sum(ncells), by = 'Pheno']
-
-
-#KL divergence per image
-
-#Image mean
-nodules <- unique(nodules[,c("core","Pheno","perc_cluster","Community")])
-nodules$Pheno = factor(nodules$Pheno, levels = sort(unique(nodules$Pheno)))
-
-#Make missing cells types 0
-nodules_wide = dcast.data.table(nodules,formula = 'Community + core ~ Pheno',value.var = 'perc_cluster',fill = 0)
-nodules_long = melt.data.table(nodules_wide, id.vars = c('Community','core') ,variable.name = 'cluster', value.name = 'perc_cluster')
-
-#split into patients
-ind_cores <- split( nodules_long , f = nodules_long$core )
-ind_cores = lapply(ind_cores, function(x){x[order(x$Community),]})
-all_core_comm = lapply(ind_cores,function(x){x[, core_mean := mean(perc_cluster), by=cluster]})
-ind_comm <- lapply(all_core_comm, function(x){split( x , f = x$Community )})
-
-library("entropy")
-kldiv <- lapply(ind_comm, function(x){lapply(x,function(y){KL.plugin(y$perc_cluster, na.omit(y$core_mean))})})
-sum_kldiv <- lapply(kldiv,function(x){Reduce("+",x)})
-length_kldiv <- lapply(kldiv,function(x){length(x)})
-mean_kldiv_core <- unlist(t(sum_kldiv))/unlist(t(length_kldiv))
-
-comm_kldiv = data.table(unlist(names(kldiv)))
-names(comm_kldiv) = "core"
-comm_kldiv$kldiv = mean_kldiv_core
-
-#Merge with metadata
-comm_kldiv = merge(comm_kldiv, unique(Sample_metadata[,c('core','patientcode')]),by = 'core')
-
-#Order according to Basel
-comm_kldiv =  comm_kldiv[order(match(comm_kldiv$patientcode,patient_cluster_all$patientcode))]
-
-#Binary
-comm_kldiv$bin[comm_kldiv$kldiv < 1] = 0
-comm_kldiv$bin[comm_kldiv$kldiv > 1] = 1
-
-#Fragmentation colorbar
-p6 <- ggplot(comm_kldiv, aes(x=1,y=c(1:length(comm_kldiv$bin))))+
-      geom_tile(aes( fill=comm_kldiv$bin))+
-  scale_fill_gradient2(low = "blue", mid = "white", high = "blue")+
-    theme(axis.title.x=element_blank(),
-          axis.text.x=element_blank(),
-          axis.ticks.x=element_blank(),
-          axis.title.y=element_blank(),
-          axis.text.y=element_blank(),
-          axis.ticks.y=element_blank(),
-          line = element_blank(),
-          legend.position="none")
-
-p4 <- ggdraw() +
-     draw_plot(p2 + scale_y_reverse(), 0, 0.001, 0.39, 0.998) +
-     draw_plot(p ,0.5, 0.0355, 0.5, 0.926)+
-     draw_plot(p3,0.45,0,0.05,1)+
-    draw_plot(p7,0.42,0,0.05,1)+
-    draw_plot(p6,0.39,0,0.05,1)
-
-pdf(file="/home/jana/Desktop/R_dat/fragmentationscore_nodulemixing_test.pdf", width=30, height=50)
-p4
-dev.off()
-
-
-
-g = ggplot(comm_kldiv, aes(x = kldiv))+
-  geom_density()
-
-```
-
-Generate output for Supplementary Table 4: patient group metadata counts
+Generate output for Supplementary Table 3: SCP patient group metadata summary
 ```{r}
 #Factor variables have to be treated separatedly from continuous
 
-#Add patient group 5 back in for table and merge with metadata
-meta_subgroups = merge( rbind(meta_patient_clustering,data.frame(patientcode =  c('UB_SX_000429','UB_SX_000153','UB_SX_000443'),patient_pheno = rep(18,3))), Sample_metadata, by = 'patientcode')
+#Add patient group 18 back in for table and merge with metadata
+meta_subgroups = merge( rbind(meta_patient_clustering,data.frame(PID =  c('93','276','200'),patient_pheno = rep('18',3))), Sample_metadata, by = 'PID')
 
 #Factors:
-meta_subgroups_factors = unique(meta_subgroups[,c('patientcode','patient_pheno','grade','gender','Patientstatus','PTNM_M','PTNM_N','histology','Pre-surgeryTx','Post-surgeryTx','clinical_type','response')])
-meta_subgroups_factors = melt.data.table(meta_subgroups_factors, id.vars = c('patientcode','patient_pheno'),measure.var = colnames(meta_subgroups_factors)[!colnames(meta_subgroups_factors) %in% c('patientcode','patient_pheno')],variable.name = 'clinical',value.name = 'value')
+meta_subgroups_factors = unique(meta_subgroups[,c('PID','patient_pheno','grade','gender','Patientstatus','PTNM_M','PTNM_N','histology','Pre-surgeryTx','Post-surgeryTx','clinical_type','response')])
+meta_subgroups_factors = melt.data.table(meta_subgroups_factors, id.vars = c('PID','patient_pheno'),measure.var = colnames(meta_subgroups_factors)[!colnames(meta_subgroups_factors) %in% c('PID','patient_pheno')],variable.name = 'clinical',value.name = 'value')
 meta_subgroups_factors[,counts := .N, by = c('clinical','patient_pheno','value')]
-meta_subgroups_factors = unique(meta_subgroups_factors[,-c('patientcode')])
+meta_subgroups_factors = unique(meta_subgroups_factors[,-c('PID')])
 
 meta_subgroups_factors[,clin_value := paste0(clinical,'_',value)]
 meta_subgroups_factors = dcast.data.table(meta_subgroups_factors,formula = 'patient_pheno ~ clin_value', value.var = 'counts')
 
 #Continuous variables:
-meta_subgroups_continuous = unique(meta_subgroups[,c('patientcode','patient_pheno','tumor_size','age','DFSmonth','OSmonth')])
-meta_subgroups_continuous = melt.data.table(meta_subgroups_continuous, id.vars = c('patientcode','patient_pheno'),measure.var = colnames(meta_subgroups_continuous)[!colnames(meta_subgroups_continuous) %in% c('patientcode','patient_pheno')],variable.name = 'clinical',value.name = 'value')
+meta_subgroups_continuous = unique(meta_subgroups[,c('PID','patient_pheno','tumor_size','age','DFSmonth','OSmonth')])
+meta_subgroups_continuous = melt.data.table(meta_subgroups_continuous, id.vars = c('PID','patient_pheno'),measure.var = colnames(meta_subgroups_continuous)[!colnames(meta_subgroups_continuous) %in% c('PID','patient_pheno')],variable.name = 'clinical',value.name = 'value')
 meta_subgroups_continuous$value = as.numeric(meta_subgroups_continuous$value)
 meta_subgroups_continuous[,counts := mean(value), by = c('clinical','patient_pheno')]
-meta_subgroups_continuous = unique(meta_subgroups_continuous[,-c('patientcode','value')])
+meta_subgroups_continuous = unique(meta_subgroups_continuous[,-c('PID','value')])
 meta_subgroups_continuous = dcast.data.table(meta_subgroups_continuous,formula = 'patient_pheno ~ clinical', value.var = 'counts')
 
 #Merge categorical and continuous tables
@@ -1456,62 +976,41 @@ meta_subgroup_counts = merge(meta_subgroups_continuous, meta_subgroups_factors, 
 colnames(meta_subgroup_counts)[1] = 'patient_group'
 
 #Write out
-fwrite(meta_subgroup_counts, file='/home/jana/Desktop/R_dat/meta_subgroup_counts.csv', col.names = TRUE)
+fwrite(meta_subgroup_counts, file='meta_subgroup_counts.csv', col.names = TRUE)
 
 #Also calculate STD for tumor size
-size = unique(meta_subgroups[,c('patientcode','patient_pheno','tumor_size')])
+size = unique(meta_subgroups[,c('PID','patient_pheno','tumor_size')])
 size[,std := std(tumor_size), by = 'patient_pheno']
 size = unique(size[order(size$patient_pheno),c('patient_pheno','std')])
 
 ```
 
-Histograms of densities of cell types across patients (colored by patient group)
+Patient tSNEs based on tumor cell type fractions with colors of SCP patient groups
 ```{r}
-
-for (i in 1:27){
-cur_dat = cluster_dat_tumors[cluster_dat_tumors$cluster == i,]
-cur_dat = unique(cur_dat[,c('core','cluster_by_area','patient_pheno')])
-cur_dat = unique(cur_dat)
-
-p[[i]] = ggplot(data=cur_dat, aes(x = reorder(factor(core),cluster_by_area), y = cluster_by_area)) + 
-  geom_bar(stat='identity') +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
-  theme(axis.text.x = element_text(colour = mycols_patient[as.numeric(cur_dat$patient_pheno[order(cur_dat$cluster_by_area)])])) 
-}
-
-pdf('....pdf',width = 150,height = 50)
-do.call(grid.arrange,p)
-dev.off()
-
-```
-
-Patient tSNEs based on tumor cell type fractions with colors of patient groups
-```{r}
-#Patient tSNE with colors of patient groups based on tumor celltype fractions
-patient_dat_vars_tsne = patient_dat_vars_perc[order(patientcode)]
-patient_wide_tsne = dcast.data.table(data =patient_dat_vars_tsne, formula = 'patientcode ~ channel',
+#Patient tSNE based on tumor celltype fractions
+patient_dat_vars_tsne = patient_dat_vars_perc[order(PID)]
+patient_wide_tsne = dcast.data.table(data =patient_dat_vars_tsne, formula = 'PID ~ channel',
                          value.var = 'value',fun.aggregate = mean , fill = 0)
 
 set.seed(2)
-
 # Run tsne based on cell type fractions
-tsne_tumor = tsne(patient_wide_tsne[,2:ncol(patient_wide_tsne)], initial_config = NULL, k = 2, initial_dims = 30, perplexity = 30,
+tsne_tumor = tsne::tsne(patient_wide_tsne[,2:ncol(patient_wide_tsne)], initial_config = NULL, k = 2, initial_dims = 30, perplexity = 30,
 max_iter = 1000, min_cost = 0, epoch_callback = NULL, whiten = TRUE,
 epoch=100)
 
 tsne_plot = cbind(patient_wide_tsne[,1],tsne_tumor)
-tsne_plot = merge(meta_patient_clustering,tsne_plot, by = 'patientcode', all = TRUE)
-tsne_plot$patient_pheno[is.na(tsne_plot$patient_pheno)] = 5 #Add back in patient group 5 for visualization
+tsne_plot = merge(meta_patient_clustering,tsne_plot, by = 'PID', all = TRUE)
+tsne_plot$patient_pheno[is.na(tsne_plot$patient_pheno)] = 18 #Add back in patient group 5 for visualization
 
 #Order such that colors and order of patients are same as on stacked barplot above
-tsne_plot = tsne_plot[order(tsne_plot$patientcode),]
+tsne_plot = tsne_plot[order(tsne_plot$PID),]
 tsne_plot = tsne_plot[hc$order,]
-tsne_plot$patientcode = factor(tsne_plot$patientcode, levels = patient_cluster_all$patientcode)
+tsne_plot$PID = factor(tsne_plot$PID, levels = patient_cluster_all$PID)
 
 #Plot patient tSNE
 p = tsne_plot%>%
   ggplot(aes(x=V1, y=V2))+
-  geom_point(size=3, alpha=1, aes(color=tsne_plot$patientcode))+
+  geom_point(size=3, alpha=1, aes(color=tsne_plot$PID))+
   labs(colour="Patients")+
   scale_color_manual(values = mycols_patient[tsne_plot$patient_pheno])+
   ggtitle('Phenograph')+
@@ -1523,13 +1022,13 @@ p = tsne_plot%>%
         plot.background=element_blank(),
         legend.key = element_blank())
 
-pdf('/home/jana/Desktop/R_dat/test.pdf',width = 35,height = 10)
+pdf('patient_tsne.pdf',width = 35,height = 10)
 p
 dev.off()
 
 
-#Color clinical type or response on patient tSNE
-meta_tsne= merge(tsne_plot,Sample_metadata, by = 'patientcode')
+#Color clinical subtype or response on patient tSNE
+meta_tsne= merge(tsne_plot,Sample_metadata, by = 'PID')
 meta_tsne$clinical_type[meta_tsne$clinical_type == ""] = NA
 meta_tsne$response[meta_tsne$response == ""] = NA
 
@@ -1547,21 +1046,19 @@ p = meta_tsne%>%
         plot.background=element_blank(),
         legend.key = element_blank())
 
-pdf('/home/jana/Desktop/R_dat/meta_tsne_clinical_type.pdf', width = 15, height = 10)
+pdf('patient_tsne.pdf', width = 15, height = 10)
 p
 dev.off()
 
 
 #Overview of cell type fractions on patient tSNE
 tsne_plot = cbind(patient_wide_tsne,tsne_tumor)
-melted = melt.data.table(tsne_plot,id.vars = c('patientcode','V1','V2'), measure.vars =colnames(tsne_plot)[!colnames(tsne_plot) %in%c('patientcode','V1','V2')], variable.name = 'channel', value.name = 'mc_counts', na.rm=TRUE)
+melted = melt.data.table(tsne_plot,id.vars = c('PID','V1','V2'), measure.vars =colnames(tsne_plot)[!colnames(tsne_plot) %in%c('PID','V1','V2')], variable.name = 'channel', value.name = 'mc_counts', na.rm=TRUE)
 
 melted[, c_counts := bbRtools::censor_dat(mc_counts,censor_val), by=channel]
-melted[, c_counts_scaled := c_counts, by=channel]
-#dat[, c_counts_scaled := quantile(c_counts_scaled,0.99), by=channel]
-melted[, c_counts_scaled := ((c_counts_scaled - min(c_counts_scaled))/(max(c_counts_scaled) - min(c_counts_scaled))), by=channel]
+melted[, c_counts_scaled := ((c_counts - min(c_counts))/(max(c_counts) - min(c_counts))), by=channel]
 melted[c_counts_scaled < 0, c_counts_scaled := 0, by=channel]
-melted$channel = factor(melted$channel, levels = 1:26)
+melted$channel = factor(melted$channel, levels = 1:27)
 
 p = melted%>%
   ggplot(aes(x=V1, y=V2, color=mc_counts))+
@@ -1583,45 +1080,12 @@ p = melted%>%
         panel.grid.minor=element_blank(),
         plot.background=element_blank()) 
 
-pdf("/home/jana/Desktop/R_dat/test.pdf",
+pdf("patient_tsne_overview.pdf",
   width     = 30,
   height    = 10)
 p
 dev.off()
 
-
-
-
-tsne_plot = cbind(patient_wide_tsne[,1],tsne_tumor)
-tsne_plot = merge(tsne_plot, shannon_patient, by = 'patientcode')
-
-
-tsne_plot[, c_shannon := bbRtools::censor_dat(shannon,0.95)]
-
-
-p = tsne_plot%>%
-  ggplot(aes(x=V1, y=V2, color=c_shannon))+
-  geom_point(alpha=1, size=2)+
-  scale_color_gradientn(colours=rev(brewer.pal(11, 'Spectral')), name='Counts')+
-  ggtitle('Shannon_censored')+
-  scale_x_discrete(labels = abbreviate)+
-  theme(strip.background = element_blank(),
-        axis.line=element_blank(),
-        axis.text.x=element_blank(),
-        axis.text.y=element_blank(),
-        axis.ticks=element_blank(),
-        axis.title.x=element_blank(),
-        axis.title.y=element_blank(),
-        panel.background=element_blank(),
-        panel.border=element_blank(),
-        panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        plot.background=element_blank()) 
-
-
-pdf('/home/jana/Desktop/R_dat/patientTSNE_shannon.pdf')
-p
-dev.off()
 ```
 
 Cluster composition by patients of clinical type
@@ -1641,7 +1105,7 @@ p <- ggplot(cluster_dat, aes(x=cluster, y=ncells, fill=as.factor(clinical_type))
          axis.text.y = element_text(colour=rev(mycols_basel_meta)))+
   ggtitle('Cluster composition')
 
-pdf(file="....pdf", width=10, height=10)
+pdf(file="clinical_SCP.pdf", width=10, height=10)
 p
 dev.off()
 
@@ -1649,7 +1113,7 @@ dev.off()
 
 Boxplot cell type densities per patient/clinical groups
 ```{r}
-#Exclude too small patient group
+#Include small patient group 18
 cluster_dat_tumors$patient_pheno[is.na(cluster_dat_tumors$patient_pheno)] = 18
 
 p <- ggplot(cluster_dat_tumors, aes( as.factor(patient_pheno),cluster_by_area, fill = as.factor(cluster) ))+ #replace patient_pheno with clinical_type
@@ -1658,7 +1122,7 @@ p <- ggplot(cluster_dat_tumors, aes( as.factor(patient_pheno),cluster_by_area, f
    ylim(0,0.003)+
   theme(axis.text.x = element_text(colour = mycols_patient[sort(as.numeric(unique(cluster_dat_tumors$patient_pheno)))])) 
 
-pdf(file=paste0("/home/jana/Desktop/R_dat/boxplots.pdf"), width=160, height=10)
+pdf(file=paste0("boxplots.pdf"), width=160, height=10)
 p
 dev.off()
 
@@ -1669,130 +1133,35 @@ p <- ggplot(cluster_dat_tumors, aes( as.factor(cluster),cluster_by_area, fill = 
    ylim(0,0.003)+
   theme(axis.text.x = element_text(colour = mycols_basel_meta[sort(as.numeric(unique(cluster_dat_tumors$cluster)))])) 
 
-pdf(file=paste0("/home/jana/Desktop/R_dat/boxplots_reverse.pdf"), width=10, height=10)
-p
-dev.off()
-
-p <- ggplot(cluster_dat_tumors, aes( as.factor(cluster),cluster_by_area, fill = as.factor(patient_pheno) ))+ #replace patient_pheno with clinical_type
-    geom_violin(scale="width")+
-    scale_fill_manual(values = mycols_patient[sort(as.numeric(unique(cluster_dat_tumors$patient_pheno)))])+
-    ylim(0,0.003)+
-    theme(axis.text.x = element_text(colour = mycols_basel_meta[sort(as.numeric(unique(cluster_dat_tumors$cluster)))])) 
-
-pdf(file=paste0("/home/jana/Desktop/R_dat/boxplots_reverse.pdf"), width=120, height=10)
-p
-dev.off()
-
-#For stromal regions
-strom = merge(cluster_dat_tumors,neighb_clusters_orig,by = 'patientcode')
-p <- ggplot(strom, aes( as.factor(cluster.x),cluster_by_area, fill = as.factor(cluster.y) ))+ #replace patient_pheno with clinical_type
-     geom_boxplot()+
-   scale_fill_manual(values = col_vector[sort(as.numeric(unique(strom$cluster.y)))])+
-   ylim(0,0.003)+
-  theme(axis.text.x = element_text(colour = mycols_basel_meta[sort(as.numeric(unique(strom$cluster.x)))])) 
-
-pdf(file=paste0("/home/jana/Desktop/R_dat/boxplots_reverse.pdf"), width=10, height=10)
+pdf(file=paste0("boxplots_reverse.pdf"), width=10, height=10)
 p
 dev.off()
 
 ```
 
-Image level clustering for stacked barplot (not patient level) and for other image level analyses (neighborhoods)
+Image level cell type counts 
 ```{r}
-# Run hierclust on image's celltype densities
+#Celltype densities
 image_dat_vars <- unique(cluster_dat)
 grade <- unique(image_dat_vars[,c('core','grade')])
 image_dat_vars <- image_dat_vars[,c("core","cluster","cluster_by_area")]
-un_clusters_im <- unique(image_dat_vars$cluster)
 colnames(image_dat_vars)<-c("core","channel","value")
-
 image_wide = dcast.data.table(data =image_dat_vars, formula = 'core ~ channel',
                           value.var = 'value',fun.aggregate = mean, fill = 0)
 image_grade = merge(image_wide,grade, by = 'core')
 
-dd_image <- dist(scale(image_wide[,2:ncol(image_wide)]), method = "euclidean")
-hc_image <- hclust(dd_image, method = "ward.D2")
-
 ```
 
-Correlation Tcells Endo
-```{r}
-
-setkey(image_wide,core)
-
-cur_image_wide = image_wide
-colnames(cur_image_wide)[25] = 'Tcells'
-colnames(cur_image_wide)[21] = 'Endothelial'
-p2 <-ggplot(cur_image_wide,aes(x = Tcells,y=Endothelial))+
-  geom_point(size=2, alpha=1)+
-  geom_smooth(method=lm)+
-    annotate(x=0.004, y=0.0012, 
-         label=paste("R = ", round(cor(cur_image_wide[,c('Tcells', 'Endothelial')]),2)[1,2]), 
-         geom="text", size=5)
-
-```
-
-Image clustering with stacked barplot
-```{r}
-#Plot stacked barplot of Images, displaying and clustered by cell type densities and names are colored by grade
-image_order <- unique(cluster_dat$core)[hc_image$order]
-
-#Reorder the levels of legend
-cluster_dat$cluster <- factor(cluster_dat$cluster)
-patient_im_orig = cluster_dat[,c('core','grade')]
-patient_im_orig = unique(patient_im_orig)
-all_order = patient_im_orig[order(match(patient_im_orig$core,image_order))]
-cluster_dat$cluster = factor(cluster_dat$cluster, levels = 1:27)
-
-#Stacked barplot image level, colores represent cell type densities, label colors represent grad/normal tissue
-p <- ggplot(cluster_dat, aes(x=core, y=cluster_by_area,  fill=cluster)) + 
-  geom_bar(stat='identity')+
-  scale_fill_manual("Clusters",values = mycols_basel_meta)+
-  scale_x_discrete(limits = all_order$core)+
-  #facet_wrap(core~)+
-  labs(fill = "Clusters")+
-  coord_flip()+
-  xlab("Patient images")+
-  ylab("Cell densities")+
-  theme(panel.background = element_blank(),
-    axis.text.y = element_text(colour=col_vector[as.factor(all_order$grade)]))+
-  ggtitle('Image composition')
-
-#Clustergram
-library("ggdendro")
-p2 <- ggdendrogram(hc_image, rotate = TRUE,labels = FALSE, theme_dendro = TRUE, leaf_labels = FALSE)+
-  theme(axis.title.x=element_blank(),
-          axis.text.x=element_blank(),
-          axis.ticks.x=element_blank(),
-          axis.title.y=element_blank(),
-          axis.text.y=element_blank(),
-          axis.ticks.y=element_blank())
-
-#Align
-p4 <- ggdraw() +
-     draw_plot(p2 + scale_y_reverse(), 0, 0.001, 0.43, 0.995) +
-     draw_plot(p ,0.49, 0.04, 0.5, 0.915)
-
-
-pdf(file="....pdf", width=40, height=100)
-p4
-dev.off()
-
-
-```
-
-Correlationplot-Neighborhood Overlay heatmap for meta clusters across all images
+Correlationplot-Neighborhood Overlay heatmap for meta clusters across all images (Figure 2)
 ```{r}
 # #If necessary exclude normal samples, not excluded for one overall heatmap
 # image_nonormal = merge(image_wide, Sample_metadata, by = 'core')
 # image_nonormal = image_nonormal[!image_nonormal$diseasestatus == 'non-tumor',]
 # image_nonormal = image_nonormal[,1:ncol(image_wide)]
 # patientgrps = merge(image_nonormal, cluster_dat_tumors, by = 'core')
-# #Exclude those patients with too few to form a group
-# patientgrps = patientgrps[!patientgrps$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
 
 
-#Correlations of cell type cluster densities across all images, run image clustering first to have correct variables
+#Correlations of cell type metacluster densities across all images
 image_wide_cut <-image_wide[,2:ncol(image_wide)]
 o <- order(as.numeric(colnames(image_wide_cut)))
 image_wide_cut <-image_wide_cut[,o, with = FALSE]
@@ -1800,23 +1169,20 @@ mat <- as.matrix(image_wide_cut)
 mat[is.na(mat)] <- 0
 correlation <- cor(mat)
 
-#Regular corrplot images only
-corrplot(correlation, method = "circle",col=colorRampPalette(c("blue","white","red"))(200))
+#Regular corrplot across all images
+corrplot::corrplot(correlation, method = "circle",col=colorRampPalette(c("blue","white","red"))(200))
 
-#Square corrplot images only
-p2 <- ggcorrplot(correlation, method = "square")+
-  scale_y_reverse()
 
-#Import neighborhood analysis output from histoCAT, that was saved out after histoCAT analysis
-neighbor_heatmap = read.csv("/home/jana/Desktop/bb_volume_jana/Data/2019/Revisions_submission/NeighborhoodBasel_newMetaclusters/neighborhood_heatmap.csv",header = T)
-nr_images = read.csv("/home/jana/Desktop/bb_volume_jana/Data/2019/Revisions_submission/NeighborhoodBasel_newMetaclusters/nr_images.csv",header = T)
+#Import neighborhood analysis output from histoCAT. This was saved out by the adapted neighborhood analysis Matlab scripts.
+neighbor_heatmap = read.csv("/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/neighborhood_output/neighborhood_heatmap.csv",header = T)
+nr_images = read.csv("/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/neighborhood_output/nr_images.csv",header = T)
 colnames(nr_images) <- c("Var1","Var2","value")
 nr_images <- nr_images[order(nr_images$Var2),]
 colnames(neighbor_heatmap) <- c(1:27)
 rownames(neighbor_heatmap) <- c(1:27)
 melted.dat <- melt(t(data.matrix(neighbor_heatmap)))
 
-#Regular Neighborhood heatmap
+#Regular Neighborhood heatmap as in histoCAT
 p<-ggplot(data = melted.dat, aes(x=Var1, y=Var2, fill=value)) + 
   geom_tile()+
   scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
@@ -1838,27 +1204,19 @@ p<-ggplot(data = melted.dat, aes(x=Var1, y=Var2, fill=value)) +
       legend.position="none")
 
 
-#Version of neighborhood on top of corrplot, including circle size corresponding to nr_images:
+#Version with neighborhood on top of corrplot, including circle size corresponding to nr_images:
 
 #Change levels of correlation for order according to celltype groups
 melt_corr = melt(correlation)
-melt_corr$Var1 = as.factor(melt_corr$Var1)
-melt_corr$Var2 = as.factor(melt_corr$Var2)
 melt_corr$Var1 <- factor(melt_corr$Var1, levels = rev(c(1:27)))
 melt_corr$Var2 <- factor(melt_corr$Var2, levels =c(1:27))
 
-
 #Change levels of neighborhood for order according to celltype groups
 melted.dat_notTransposed <- melt(data.matrix(neighbor_heatmap))
-melted.dat_notTransposed$Var1 <- as.factor(melted.dat_notTransposed$Var1)
-melted.dat_notTransposed$Var2 <- as.factor(melted.dat_notTransposed$Var2)
 melted.dat_notTransposed$Var1 <- factor(melted.dat_notTransposed$Var1, levels = rev(c(1:27)))
 melted.dat_notTransposed$Var2 <- factor(melted.dat_notTransposed$Var2, levels = c(1:27))
 
-
 #Change levels of nr images for order according to celltype groups
-nr_images$Var1 = as.factor(nr_images$Var1)
-nr_images$Var2 = as.factor(nr_images$Var2)
 nr_images$Var1 <- factor(nr_images$Var1, levels = rev(c(1:27)))
 nr_images$Var2 <- factor(nr_images$Var2, levels = c(1:27))
 
@@ -1870,11 +1228,15 @@ p3 <-ggplot(melt_corr, aes(y = Var1,
     scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
      midpoint = 0, limit = c(-1,1), space = "Lab", 
      name="Pearson\nCorrelation")+
-      theme(legend.position=c(1, 0.9),
-            axis.text.x=element_text(color = c(mycols_basel_meta[c(1:27)])), #,'black'
-            axis.text.y=element_text(color = rev( c(mycols_basel_meta[c(1:27)])))) #,'black'
+      theme(legend.position='none',
+            axis.text.x=element_text(color = c(mycols_basel_meta[c(1:27)])), 
+            axis.text.y=element_text(color = rev( c(mycols_basel_meta[c(1:27)]))),
+            panel.background = element_rect(fill = "transparent"), 
+            plot.background = element_rect(fill = "transparent", color = NA), 
+            panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank())
   
-#Reordered neighborhood heatmap
+#Reordered neighborhood heatmap circles
 p4 <- ggplot(melted.dat_notTransposed,aes(y=Var1,x=Var2))+
   geom_point(aes(colour = melted.dat_notTransposed$value, 
                  size =nr_images$value))  +   
@@ -1883,439 +1245,70 @@ scale_color_gradient2(low = "blue",
                      high = "red",
                      name = "Neighborhood interactions")+       
 scale_size(range = c(1, 8),name = "Number of images containing sign interactions")  +
-        theme(axis.text.x=element_text(color = c(mycols_basel_meta[c(1:27)])), #,'black'
-            axis.text.y=element_text(color = rev(c(mycols_basel_meta[c(1:27)])))) #,'black'
+        theme(axis.text.x=element_text(color = c(mycols_basel_meta[c(1:27)])),
+            axis.text.y=element_text(color = rev(c(mycols_basel_meta[c(1:27)]))),
+            panel.background = element_rect(fill = "transparent"), 
+            plot.background = element_rect(fill = "transparent", color = NA), 
+            panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank())
   
 #Overlay the corrplot and neighborhood heatmap, overlay is perfect like this when size of pdf stays the same
 p5 <- ggdraw() +
-   draw_plot( p3, 0, 0, 0.782, 1) +
+   draw_plot( p3, 0, 0, 0.8275, 1) +
    draw_plot( p4,0, 0, 1, 1)+ggtitle('AllImages_NeighborhoodOverlay')
   
-pdf('/home/jana/Desktop/R_dat/overlay_neigborhood.pdf',width = 20, height = 10)
+pdf('overlay_neigborhood.pdf',width = 20, height = 10)
 p5
 dev.off()
 
 
-
 ```
 
-Reproduce clustergram from neighborhood analysis in R with some adaptations to make plot for hierarchical clustering that leads to TMEs (adaptations: exclude normal and control samples, aggregate if patient has more than one image due to failed first acquisition (rare))
+Fisher's exact test to identify enrichments between SCP/Grade/Clinical patient groups
 ```{r}
-# #Read in data from histoCAT neighborhood analysis across all Metaclusters
-# clustergram_dat = read.csv("/home/jana/Desktop/bb_volume_jana/Data/2018/Clinical_paper/SpilloverCorrected/Data_for_submission/Neighborhood_Analysis/meta_clustergram.csv",header = T)
-# clustergram_grade = read.csv("/home/jana/Desktop/bb_volume_jana/Data/2018/Clinical_paper/SpilloverCorrected/Data_for_submission/Neighborhood_Analysis/meta_clustergram_grades.csv",header = T)
-
-#Read in data from histoCAT neighborhood analysis where stromal/immune/Endothelial Metaclusters are separate but all tumor cells have the same label (100)
-clustergram_dat = read.csv("/home/ubuntu/tmp/Data/2019/Revisions_submission/Data_for_submission/Neighborhood_Analysis/meta_clustergram_allTumors100.csv",header = T)
-clustergram_grade = read.csv("/home/ubuntu/tmp/Data/2019/Revisions_submission/Data_for_submission/Neighborhood_Analysis/meta_clustergram_grades_allTumors100.csv",header = T)
-
-
-#Add back in the 3 patients of group 5 that are excluded from analysis because too few
-meta_patient_clustering_full = rbind(meta_patient_clustering,data.frame(patientcode = c('UB_SX_000429','UB_SX_000153','UB_SX_000443'),patient_pheno = rep(5,3)))
-
-#Prepare data
-colnames(clustergram_grade) = c("core","grade");
-pa = merge(cluster_dat,meta_patient_clustering_full, by = 'patientcode')
-pa = pa[match(clustergram_grade$core,pa$core),]
-pa$patient_pheno[clustergram_grade$grade == 0] = 'normal'
-pa$patient_pheno[clustergram_grade$grade == 4] = 'control'
-clustergram_dat = as.matrix(clustergram_dat)
-rownames(clustergram_dat) = clustergram_grade$core
-pa$PTNM_M[is.na(pa$PTNM_M)] = 'control'
-pa$patient_pheno[is.na(pa$patient_pheno)] = 0
-pa$PTNM_M[pa$grade == 'NORMAL'] = 'normal'
-pa$clinical_type[clustergram_grade$grade == 0] = 'normal'
-pa$clinical_type[is.na(pa$clinical_type)] = 'control'
-
-#Order according to stacked barplot and exclude controls and normal samples for TME clustering (this is not the case in histoCAT)
-pa = pa[!clustergram_grade$grade %in% c(0,'CONTROL'),]
-clustergram_dat = clustergram_dat[!clustergram_grade$grade %in% c(0,'CONTROL'),]
-clustergram_grade = clustergram_grade[!clustergram_grade$grade %in% c(0,'CONTROL'),]
-
-#Sum up duplicated tumor core patients because of failed first acquisitions
-duplicate_idx = duplicated(pa$patientcode) | duplicated(pa$patientcode, fromLast = TRUE)
-duplicated_names = pa$patientcode[duplicate_idx]
-sumed_dup = lapply(unique(duplicated_names), function(x){colSums(clustergram_dat[pa$patientcode == x,])})
-sumed_dup = do.call(rbind, sumed_dup)
-rownames(sumed_dup) = rownames(clustergram_dat)[duplicated(pa$patientcode)]
-#And censor back to 1 so they don't have more impact than others
-sumed_dup[sumed_dup == 2] = 1
-sumed_dup[sumed_dup == -2] = -1
-pa_add = pa[duplicated(pa$patientcode),]
-grade_add = clustergram_grade[duplicated(pa$patientcode),]
-
-pa = pa[!duplicate_idx,]
-clustergram_dat = clustergram_dat[!duplicate_idx,]
-clustergram_grade = clustergram_grade[!duplicate_idx,]
-clustergram_dat = rbind(clustergram_dat,sumed_dup)
-clustergram_grade = rbind(clustergram_grade,grade_add)
-pa = rbind(pa,pa_add)
-order_stacked = match(patient_cluster_all$patientcode,pa$patientcode)
-
-
-#Plot heatmap
-
-h = Heatmap(clustergram_dat, name = "Clustergram", km = 1, col = colorRamp2(c(-1, 0, 1), c("blue", "white", "red")),
-     show_row_names = TRUE, show_column_names =  TRUE, clustering_method_rows = "ward.D2",clustering_method_columns = "ward.D2")+   #  row_order = rev(order_stacked), cluster_rows = FALSE
-  
-#patient groups
-    Heatmap(pa$patient_pheno, name = "Patient_Groups", show_row_names = FALSE, width = unit(10, "mm"), col = structure(c("white","white",mycols_patient,"chocolate"), names = c('normal',0:17))) +
-  
-#grades
-  Heatmap(factor(clustergram_grade$grade), name = "Grade", show_row_names = FALSE, width = unit(10, "mm"),col = structure(c("white","green","blue","red","black"), names = c('0','1','2','3','CONTROL')))+
-  
-#clinical group
-  Heatmap(factor(pa$clinical_type), name = "ClinicalType", show_row_names = FALSE, width = unit(10, "mm"),col = structure(c(mycols_clinical,"white","black","black"), names = c('HR-HER2+','HR+HER2-','HR+HER2+','TripleNeg','normal','control','CONTROL')))
-
-
-#Mets
-  Heatmap(pa$PTNM_M, name = "Met", show_row_names = FALSE, width = unit(10, "mm"),col = structure(c("white","blue","red","black"), names = c('normal','0','1','control')))
-
-pdf('/home/jana/Desktop/R_dat/clustergram_noDuplicates.pdf',width = 90,height = 60)
-h
-dev.off()
-
-```
-
-Neighborhood subgroups
-```{r}
-#Interaction circle plots where all tumor celltypes = label 100 (here shown with cell type color instead of enrichment/avoidance)
-clustergram_dat = read.csv("/home/jana/Desktop/R_dat/meta_clustergram_allTumors100.csv",header = T)
-clustergram_grade = read.csv("/home/jana/Desktop/R_dat/meta_clustergram_grades_allTumors100.csv",header = T)
-
-#Include group 5 again
-meta_patient_clustering_full = rbind(meta_patient_clustering,data.frame(patientcode = c('UB_SX_000429','UB_SX_000153','UB_SX_000443'),patient_pheno = rep(5,3)))
-
-#Prepare data
-colnames(clustergram_grade) = c("core","grade");
-pa = merge(cluster_dat,meta_patient_clustering_full, by = 'patientcode')
-pa = pa[match(clustergram_grade$core,pa$core),]
-pa$patient_pheno[clustergram_grade$grade == 0] = 'normal'
-pa$patient_pheno[clustergram_grade$grade == 4] = 'control'
-clustergram_dat = as.matrix(clustergram_dat)
-rownames(clustergram_dat) = clustergram_grade$core
-pa$PTNM_M[is.na(pa$PTNM_M)] = 'control'
-pa$patient_pheno[is.na(pa$patient_pheno)] = 0
-pa$PTNM_M[pa$grade == 'NORMAL'] = 'normal'
-pa$clinical_type[clustergram_grade$grade == 0] = 'normal'
-pa$clinical_type[is.na(pa$clinical_type)] = 'control'
-
-#Order according to stacked barplot and exclude controls and normal samples
-pa = pa[!clustergram_grade$grade %in% c(0,'CONTROL'),]
-clustergram_dat = clustergram_dat[!clustergram_grade$grade %in% c(0,'CONTROL'),]
-clustergram_grade = clustergram_grade[!clustergram_grade$grade %in% c(0,'CONTROL'),]
-
-row_names = rownames(clustergram_dat)
-circle_dat = data.table(clustergram_dat)
-circle_dat = cbind(clustergram_grade, circle_dat)
-circle_dat = cbind(circle_dat, pa[,-c('core','grade')])
-circle_dat = data.table(circle_dat)
-
-#Import TME groups from csv and store in variable ME for downstream use
-neighgroups = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/Neighborhood_Analysis/Neighborhoodgroups.csv',header = FALSE)
-ME_groups = lapply(seq(from = 1, to = 37, by = 4), function(x){as.vector(as.matrix(neighgroups[,..x]))[!as.vector(as.matrix(neighgroups[,..x])) == ""]})
-ME = data.table(unlist(ME_groups))
-names(ME) = 'core'
-for (i in 1:length(ME_groups)){
-  cur = ME_groups[[i]]
-  ME$groups[ME$core %in% cur] = i
-}
-ME = unique(ME)
-ME = merge(ME,Sample_metadata, by = 'core')
-ME = ME[ME$diseasestatus == 'tumor',c('groups','patientcode')]
-
-
-#Make circle plots of interactions, not used for paper though!
-for (j in seq(from = 1, to = 37, by = 4)){
-  idx_name = paste0('V',as.character(j))
-circle_dat_cut = circle_dat[circle_dat$core %in% as.vector(as.matrix(neighgroups[,..idx_name]))[!as.vector(as.matrix(neighgroups[,..idx_name])) == ""]]
-
-measurevars = colnames(circle_dat_cut)[str_detect(colnames(circle_dat_cut),'interaction')]
-idcols = colnames(circle_dat_cut)[!str_detect(colnames(circle_dat_cut),'interaction')]
-melted_circle_dat <- melt.data.table(circle_dat_cut, id.vars = idcols, measure.vars = measurevars, variable.name = 'channel', value.name = 'mc_counts', na.rm=TRUE)
-melted_circle_dat[,frac_sign_patient_group := sum(mc_counts[mc_counts > 0])/length(mc_counts), by = c('channel.1')] #[mc_counts > 0]
-
-melted_circle_dat = melted_circle_dat[!melted_circle_dat$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
-
-test = melted_circle_dat[,c('channel.1','frac_sign_patient_group')]
-test = unique(test)
-split = strsplit(as.character(test$channel.1),'interaction')
-num = unlist(lapply(split, function(x){x[2]}))
-split2 = strsplit(as.character(num),'_')
-first = unlist(lapply(split2, function(x){x[1]}))
-second = unlist(lapply(split2, function(x){x[2]}))
-test$first = first
-test$second = second
-test = test[,-c('channel.1')]
-# circle = dcast.data.table(test, formula = 'first ~ second', value.var = 'frac_sign_patient_group')
-# circle = as.matrix(circle)
-test = test[,c('first','second','frac_sign_patient_group')]
-
-test = test[test$frac_sign_patient_group != 0,]
-self_interaction = test[test$first == test$second,]
-self_interaction = self_interaction[order(as.numeric(self_interaction$first)),]
-self_interaction$self_neg = self_interaction$frac_sign_patient_group < 0 
-self_interaction$frac_sign_patient_group[self_interaction$self_neg] = self_interaction$frac_sign_patient_group[self_interaction$self_neg] * (-1)
-
-A = min(self_interaction$frac_sign_patient_group)
-B= max(self_interaction$frac_sign_patient_group)
-a = 0.5
-b = 6
-self_interaction$norm_sizes = (b - a) * ((self_interaction$frac_sign_patient_group - A)/(B - A)) + a
-test = test[test$first != test$second,]
-
-
-test_cut = test
-self_interaction_cut = self_interaction
-self_interaction_cut = rbind(self_interaction_cut,data.frame(first = which(!c(1:13,100) %in% self_interaction_cut$first), second = which(!c(1:13,100) %in% self_interaction_cut$first), frac_sign_patient_group = rep(0,length(which(!c(1:13,100) %in% self_interaction_cut$first))), self_neg =rep(FALSE,length(which(!c(1:13,100) %in% self_interaction_cut$first))),norm_sizes = rep(0,length(which(!c(1:13,100) %in% self_interaction_cut$first)))))
-self_interaction_cut = self_interaction_cut[order(as.numeric(self_interaction_cut$first)),]
-cur_cols = c(mycols_basel_meta[1:13],rep('black',100))
-cur_cols[self_interaction_cut$self_neg] = "black"
-
-size_value = unique(cluster_dat_tumors[,c('core','patientcode','cluster','cluster_by_area')])
-size_value$cluster_by_area[size_value$cluster == 100] = sum(size_value$cluster_by_area[size_value$cluster == 100])
-size_value = unique(size_value)
-size_value = size_value[size_value$core %in% as.vector(as.matrix(neighgroups[,..idx_name]))[!as.vector(as.matrix(neighgroups[,..idx_name])) == ""]]
-size_value = unique(size_value[,-c('core')])
-size_value[, group_avg := mean(cluster_by_area), by = c('cluster')]
-size_value = unique(size_value[,c('cluster','group_avg')])
-size_value = size_value[order(size_value$cluster),]
-size_value$norm = (4-1) * ((size_value$group_avg - min(size_value$group_avg))/(max(size_value$group_avg) - min(size_value$group_avg))) + 1
-size_value = rbind(size_value,data.frame(cluster = which(!c(1:13,100) %in% size_value$cluster), group_avg = rep(0,length(which(!c(1:13,100) %in% size_value$cluster))),norm = rep(0,length(which(!c(1:13,100) %in% size_value$cluster)))))
-size_value = size_value[order(size_value$cluster),]
-  
-  
-test_cut = test_cut[rev(order(test_cut$frac_sign_patient_group)),]
-
-
-pdf(file=paste0("/home/jana/Desktop/R_dat/",as.character(j),".pdf"), width=10, height=10)
-print(
-circos.par("track.height" = 0.1)+
-circos.initialize(factors = factor(c(1:13,100)), xlim = c(0,1))+
-circos.track(factors = factor(c(1:13,100)), y = 1:14,    
-             panel.fun = function(x, y) {
-        circos.text(CELL_META$xcenter, CELL_META$cell.ylim[2] + uy(8, "mm"), 
-            CELL_META$sector.index, col = cur_cols[get.cell.meta.data('sector.numeric.index')], cex = size_value$norm[get.cell.meta.data('sector.numeric.index')])
-        circos.axis(labels.cex = 0.6)
-})+
-circos.trackPoints(c(1:13,100),rep(0.5,14),rep(8,14), col = cur_cols, pch = 16, cex = self_interaction_cut$norm_sizes[1:13])+
-for (i in 1:nrow(test_cut)){
-  # if (test_cut$frac_sign_patient_group[i] > 0){
-  circos.link(test_cut$first[i], c(0 + test_cut$frac_sign_patient_group[i],0), test_cut$second[i],c(0 + test_cut$frac_sign_patient_group[i],0), h = 1, col = cur_cols[as.numeric(test_cut$first[i])])#} 
-  # else{
-  # circos.link(test_cut$first[i], c(0,0 + test_cut$frac_sign_patient_group[i]), test_cut$second[i],c(0,0 + test_cut$frac_sign_patient_group[i]), h = 1, col = "blue")}
-})
-dev.off()
-}
-
-```
-
-Patient clustered stacked barplot with same clustering as for meta clusters but display densities of small clusters (original 70 PG clusters), works only if clusters in cluster_pheno and cluster_dat are still the small clusters (not overwritten with meta clusters) but the patient clustering has previously already been run on the metaclusters (small clusters are only for display)
-```{r}
-
-cluster_dat_tumors$cluster = factor(cluster_dat_tumors$cluster, levels = cluster_order_basel) 
-
-cluster_dat_tumors[, perc_cells_patient := ncells*100/sum(ncells), by=patientcode]
-cluster_dat_tumors[, area_cells_patient := mean(cluster_by_area), by=c('patientcode','cluster')]
-cluster_dat_tumors = cluster_dat_tumors[order(patientcode)]
-
-#Grade colors
-patient_grade_orig = cluster_dat_tumors[,c('patientcode','grade')]
-patient_grade = unique(patient_grade_orig)
-patient_grade = patient_grade[!duplicated(patient_grade$patientcode),]
-
-patient_grade_all = patient_grade[hc$order]
-grade_order = patient_grade_all$grade
-
-#Patient cluster colors
-patient_cluster_orig = cluster_dat_tumors[,c('patientcode','patient_pheno')]
-patient_cluster = unique(patient_cluster_orig)
-patient_Cluster = patient_cluster[!duplicated(patient_cluster$patientcode),]
-
-patient_cluster_all = patient_cluster[hc$order]
-cluster_order = patient_cluster_all$patient_pheno
-
-#Clinical type colors
-patient_clinical_orig = cluster_dat_tumors[,c('patientcode','clinical_type')]
-patient_clinical = unique(patient_clinical_orig)
-patient_clinical = patient_clinical[!duplicated(patient_clinical$patientcode),]
-
-patient_clinical_all = patient_clinical[hc$order]
-patient_clinical_all$clinical_type = factor(patient_clinical_all$clinical_type)
-patient_clinical_all$clinical_type[patient_clinical_all$clinical_type == ""] = NA
-clinical_order = patient_clinical_all$clinical_type
-
-#plot
-cut = cluster_dat_tumors[,c('patientcode','cluster','area_cells_patient')]
-cut = unique(cut)
-#Stacked bar plot
-p <- ggplot(cut, aes(x=patientcode, y=area_cells_patient, fill=factor(cluster, levels = rev(cluster_order_basel)))) + #
-  geom_bar(stat='identity',show.legend = TRUE)+
-  scale_fill_manual("Clusters",values =  rev(mycols_basel))+ # [cluster_order_basel_meta %in% c(14:25)]
-  scale_x_discrete(limits = patient_cluster_all$patientcode)+
-  labs(fill = "Clusters")+
-  coord_flip()+
-  xlab("Patient")+
-  ylab("Percentage of cluster cells in patient")+
-  theme(panel.background = element_blank(),
-        axis.text.y = element_text(colour=mycols_patient[cluster_order]))+
-  ggtitle('Patient composition')
-
-#Clinical type bar
-p3 <- ggplot(patient_clinical_all, aes(x=1,y=c(1:length(patient_clinical_all$clinical_type))))+
-      geom_tile(aes( fill=clinical_type))+
-  scale_fill_manual(values = mycols_clinical)+
-    theme(axis.title.x=element_blank(),
-          axis.text.x=element_blank(),
-          axis.ticks.x=element_blank(),
-          axis.title.y=element_blank(),
-          axis.text.y=element_blank(),
-          axis.ticks.y=element_blank(),
-          line = element_blank(),
-          legend.position="none")
-
-
-
-#Dendrogram of hierarchical clustering
-p2 <- ggdendrogram(hc, rotate = TRUE,labels = TRUE, theme_dendro = TRUE, leaf_labels = FALSE)+
-  theme(axis.title.x=element_blank(),
-          axis.text.x=element_blank(),
-          axis.ticks.x=element_blank(),
-          axis.title.y=element_blank(),
-          axis.text.y=element_blank(),
-          axis.ticks.y=element_blank())
-
-#Alignment is not same when printing to pdf, so don't pay attention to plot displayed in R, it is aligned for pdf
-p4 <- ggdraw() +
-     draw_plot(p2 + scale_y_reverse(), 0, 0.001, 0.47, 0.998) +
-     draw_plot(p ,0.5, 0.0355, 0.5, 0.926)+
-     draw_plot(p3,0.45,0,0.05,1)
-
-
-pdf(file="....pdf", width=30, height=50)
-p4
-dev.off()
-
-
-```
-
-Fisher's exact test to identify enrichments between SC/TME/Clinical patient groups
-```{r}
-#Enrichment of SCP patient groups with TME:
-
-#Prepare data
-CT_ME = merge(ME, cluster_dat_tumors,by = 'patientcode')
-CT_ME = CT_ME[,c('patientcode','groups','patient_pheno')]
-CT_ME = unique(CT_ME)
-#Exclude patient in patient group 5 (too small patient group for analysis)
-CT_ME = CT_ME[!CT_ME$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
-
-#Loop through all SCP patient groups and test for all TMEs each one contains whether there is a significant enrichment
-overview = list()
-counter = 1
-for (i in unique(CT_ME$patient_pheno)){
-  #Logic vector for current SCP group
-  logic_vector = CT_ME$patient_pheno == i
-  #TMEs appearing in this SCP patient group
-  MEs = unique(CT_ME$groups[logic_vector])
-  #Logic vector for each present TME
-  ME_vectors = lapply(MEs, function(x){CT_ME$groups == x})
-  #Fisher's exact test between current SCP group and every present TME
-  res = lapply(ME_vectors, function(x){fisher.test(logic_vector,x,alternative = 'greater')})
-  p = unlist(lapply(res, function(x){x$p.value}))
-  CT_name = rep(i,length(MEs))
-  ME_name = MEs
-  #Correct for multiple testing of different TMEs
-  adjusted_p = p.adjust(p, method = 'bonferroni', n = length(p))
-  overview[[counter]] = cbind(CT_name,ME_name,adjusted_p)
-  
-  counter = counter + 1
-}
-
-#Write out overview of results
-d = data.table(do.call(rbind,overview))
-fwrite(d,file = '/home/jana/Desktop/R_dat/enrichment_p_vals_SCPvsmArc.csv',col.names = T)
-
-
-
-#Enrichment of Clinical patient groups (or histology) with TME:
-
-#Prepare data
-CT_ME = merge(ME, cluster_dat_tumors,by = 'patientcode')
-CT_ME = CT_ME[,c('patientcode','groups','clinical_type')] #or histology
-CT_ME = unique(CT_ME)
-CT_ME = CT_ME[!CT_ME$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
-
-#Loop through all Clinical patient groups and test for all TMEs each one contains whether there is a significant enrichment
-overview = list()
-counter = 1
-for (i in unique(CT_ME$clinical_type)){
-  logic_vector = CT_ME$clinical_type == i
-  MEs = unique(CT_ME$groups[logic_vector])
-  ME_vectors = lapply(MEs, function(x){CT_ME$groups == x})
-  res = lapply(ME_vectors, function(x){fisher.test(logic_vector,x,alternative = 'greater')})
-  p = unlist(lapply(res, function(x){x$p.value}))
-  CT_name = rep(i,length(MEs))
-  ME_name = MEs
-  #Correct for multiple testing
-  adjusted_p = p.adjust(p, method = 'bonferroni', n = length(p))
-  overview[[counter]] = cbind(CT_name,ME_name,adjusted_p)
-  
-  counter = counter + 1
-}
-
-#Write out overview of results
-d = data.table(do.call(rbind,overview))
-fwrite(d,file = '/home/jana/Desktop/R_dat/enrichment_p_vals_Clin_mArc.csv',col.names = T)
-
-
-
 #Enrichment of Clinical patient groups with SCP patient group:
 
 #Prepare data
-CT_ME = merge(ME, cluster_dat_tumors,by = 'patientcode')
-CT_ME = CT_ME[,c('patientcode','patient_pheno','clinical_type')]
-CT_ME = unique(CT_ME)
-CT_ME = CT_ME[!CT_ME$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
+CT_SCP = unique(cluster_dat_tumors[,c('PID','patient_pheno','clinical_type')])
+CT_SCP = CT_SCP[!CT_SCP$PID %in% c('93','276','200'),] #Exclude too small patient group (3 patients, SCP 18)
 
-#Loop through all Clinical patient groups and test for all SCP patient groups each one contains whether there is a significant enrichment
+#Loop through clinical patient subtypes and test for each overlapping (exists in same patients) SCP whether there is a significant enrichment in that clinical group
 overview = list()
 counter = 1
-for (i in unique(CT_ME$clinical_type)){
-  logic_vector = CT_ME$clinical_type == i
-  MEs = unique(CT_ME$patient_pheno[logic_vector])
-  ME_vectors = lapply(MEs, function(x){CT_ME$patient_pheno == x})
-  res = lapply(ME_vectors, function(x){fisher.test(logic_vector,x,alternative = 'greater')})
+for (i in unique(CT_SCP$clinical_type)){
+  logic_vector = CT_SCP$clinical_type == i
+  SCPs = unique(CT_SCP$patient_pheno[logic_vector])
+  SCP_vectors = lapply(SCPs, function(x){CT_SCP$patient_pheno == x})
+  res = lapply(SCP_vectors, function(x){fisher.test(logic_vector,x,alternative = 'greater')})
   p = unlist(lapply(res, function(x){x$p.value}))
-  CT_name = rep(i,length(MEs))
-  ME_name = MEs
+  CT_name = rep(i,length(SCPs))
+  SCP_name = SCPs
+  
   #Correct for multiple testing
   adjusted_p = p.adjust(p, method = 'bonferroni', n = length(p))
-  overview[[counter]] = cbind(CT_name,ME_name,adjusted_p)
+  overview[[counter]] = cbind(CT_name,SCP_name,adjusted_p)
   
   counter = counter + 1
 }
 
 #Write out overview of results
 d = data.table(do.call(rbind,overview))
-fwrite(d,file = '/home/jana/Desktop/R_dat/enrichment_p_vals_Clin_SCP.csv',col.names = T)
+fwrite(d,file = 'enrichment_p_vals_Clin_SCP.csv',col.names = T)
 
 
 
-#Enrichment of SCP patient groups/ TMEs with response to treatment:
+#Enrichment of SCP patient groups and grade or response...
 
 #Prepare data
-CT_ME = merge(ME, cluster_dat_tumors,by = 'patientcode')
-CT_ME = CT_ME[,c('patientcode','response','groups')] # replace 'patient_pheno' with 'groups' to look at TME instead of SCP group
-CT_ME = unique(CT_ME)
-CT_ME = CT_ME[!CT_ME$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
+CT_ME = unique(cluster_dat_tumors[,c('PID','response','patient_pheno')]) # replace response with grade or any other grouping
+CT_ME = CT_ME[!CT_ME$PID %in% c('93','276','200'),]
 CT_ME = CT_ME[!CT_ME$response == '',]
 
 #Loop through all SCP/TME patient groups and test for all response types each one contains whether there is a significant enrichment
 overview = list()
 counter = 1
-for (i in unique(CT_ME$groups)){
-  logic_vector = CT_ME$groups == i
+for (i in unique(CT_ME$patient_pheno)){
+  logic_vector = CT_ME$patient_pheno == i
   MEs = unique(CT_ME$response[logic_vector])
   ME_vectors = lapply(MEs, function(x){CT_ME$response == x})
   res = lapply(ME_vectors, function(x){fisher.test(logic_vector,x,alternative = 'greater')})
@@ -2331,53 +1324,22 @@ for (i in unique(CT_ME$groups)){
 
 d = data.table(do.call(rbind,overview))
 colnames(d) = c('Patientgroup','Response','adjusted_p')
-fwrite(d,file = '/home/jana/Desktop/R_dat/enrichment_p_vals_TME_response.csv',col.names = T)
-
-
+fwrite(d,file = 'enrichment_p_vals_SCP_response.csv',col.names = T)
 ```
 
-Plot to visualize fractions of SCP groups and TME groups and vice versa (also for other group combinations tested above)
+Plot to visualize fractions of SCP groups and clinical patient groups and vice versa (also for other group combinations tested above)
 ```{r}
-#SCP vs TME patient groups:
-#Prepare data
-CT_ME = merge(ME, cluster_dat_tumors,by = 'patientcode')
-CT_ME = CT_ME[,c('patientcode','groups','patient_pheno')]
-CT_ME = unique(CT_ME)
-CT_ME[,nr_both := .N, by = c('groups','patient_pheno')]
-CT_ME[,perc_ME := nr_both/.N, by = c('groups')]
-CT_ME[,perc_CT := nr_both/.N, by = c('patient_pheno')]
-#Exclude patient group 5
-CT_ME = CT_ME[!CT_ME$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
-CT_ME$groups = factor(CT_ME$groups, levels = as.character(10:1))
-CT_ME$patient_pheno = factor(CT_ME$patient_pheno)
-colnames(CT_ME)[1:3] = c('patientcode','ME_groups','CT_groups')
-
-#plot
-p4 <- ggplot(CT_ME,aes(y=ME_groups,x=CT_groups))+
-  geom_point(aes(colour = perc_ME, 
-                 size =perc_CT))  +   
-scale_color_gradient2(low = "blue",  
-                     mid = "white",
-                     high = "red",
-                     name = "Fraction of ME in CT group")+       
-scale_size(range = c(1, 15),name = "Fraction of CT in ME group") +
-      theme(axis.text.x=element_text(color = c(mycols_patient)))
-
-pdf('/home/jana/Desktop/R_dat/CT_ME_groups.pdf',width = 20, height = 10)
-p4
-dev.off()
- 
 
 #Clinical vs SCP patient groups:
 #Prepare data
-CT_clinical = cluster_dat_tumors[,c('patientcode','clinical_type','patient_pheno')]
+CT_clinical = cluster_dat_tumors[,c('PID','clinical_type','patient_pheno')]
 CT_clinical = unique(CT_clinical)
 CT_clinical[,nr_both := .N, by = c('clinical_type','patient_pheno')]
 CT_clinical[,perc_clin := nr_both/.N, by = c('clinical_type')]
 CT_clinical[,perc_CT := nr_both/.N, by = c('patient_pheno')]
-CT_clinical = CT_clinical[!CT_clinical$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
+CT_clinical = CT_clinical[!CT_clinical$PID %in% c('93','276','200'),]
 CT_clinical$patient_pheno = factor(CT_clinical$patient_pheno)
-colnames(CT_clinical)[1:3] = c('patientcode','Clinical_groups','CT_groups')
+colnames(CT_clinical)[1:3] = c('PID','Clinical_groups','CT_groups')
 CT_clinical = CT_clinical[!CT_clinical$Clinical_groups == '',]
 
 #Plot
@@ -2394,48 +1356,19 @@ scale_size(range = c(1, 15),name = "Fraction of CT in Clinical group")  +
 pdf('/home/jana/Desktop/R_dat/Clin_CT_groups.pdf',width = 20, height = 10)
 p4
 dev.off()
- 
 
-#Clinical vs TME patient groups:
+
+#Response type vs SCP patient groups: (or grade or whathever other grouping)
 #Prepare data
-CT_ME = merge(ME, cluster_dat_tumors,by = 'patientcode')
-CT_ME = CT_ME[,c('patientcode','groups','clinical_type')]
-CT_ME = unique(CT_ME)
-CT_ME[,nr_both := .N, by = c('groups','clinical_type')]
-CT_ME[,perc_ME := nr_both/.N, by = c('groups')]
-CT_ME[,perc_CT := nr_both/.N, by = c('clinical_type')]
-CT_ME = CT_ME[!CT_ME$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
-CT_ME$groups = factor(CT_ME$groups, levels = as.character(1:10))
-colnames(CT_ME)[1:3] = c('patientcode','ME_groups','Clinical_groups')
-CT_ME = CT_ME[!CT_ME$Clinical_groups == '']
-
-#Plot
-p4 <- ggplot(CT_ME,aes(y=Clinical_groups,x=ME_groups))+
-  geom_point(aes(colour = perc_CT, 
-                 size =perc_ME))  +   
-scale_color_gradient2(low = "blue",  
-                     mid = "white",
-                     high = "red",
-                     name = "Fraction of Clinical in ME group")+       
-scale_size(range = c(1, 15),name = "Fraction of ME in Clinical group")  
-
-pdf('/home/jana/Desktop/R_dat/Clinical_ME_groups_flipped.pdf',width = 10, height = 10)
-p4
-dev.off()
-
-
-#Response type vs SCP patient groups:
-#Prepare data
-CT_clinical = cluster_dat_tumors[,c('patientcode','response','patient_pheno')]
+CT_clinical = cluster_dat_tumors[,c('PID','response','patient_pheno')]
 CT_clinical = unique(CT_clinical)
 CT_clinical = CT_clinical[!CT_clinical$response == '',]
 CT_clinical[,nr_both := .N, by = c('response','patient_pheno')]
 CT_clinical[,perc_clin := nr_both/.N, by = c('response')]
 CT_clinical[,perc_CT := nr_both/.N, by = c('patient_pheno')]
-CT_clinical = CT_clinical[!CT_clinical$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
+CT_clinical = CT_clinical[!CT_clinical$PID %in% c('93','276','200'),]
 CT_clinical$patient_pheno = factor(CT_clinical$patient_pheno)
-colnames(CT_clinical)[1:3] = c('patientcode','response','CT_groups')
-
+colnames(CT_clinical)[1:3] = c('PID','response','CT_groups')
 
 #Plot
 p4 <- ggplot(CT_clinical,aes(y=response,x=CT_groups))+
@@ -2453,152 +1386,85 @@ p4
 dev.off()
 
 
-#Response type vs TME patient groups:
-#Prepare data
-CT_ME = merge(ME, cluster_dat_tumors,by = 'patientcode')
-CT_ME = CT_ME[,c('patientcode','groups','response')]
-CT_ME = unique(CT_ME)
-CT_ME = CT_ME[!CT_ME$response == '']
-CT_ME[,nr_both := .N, by = c('groups','response')]
-CT_ME[,perc_ME := nr_both/.N, by = c('groups')]
-CT_ME[,perc_CT := nr_both/.N, by = c('response')]
-CT_ME = CT_ME[!CT_ME$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
-CT_ME$groups = factor(CT_ME$groups, levels = as.character(1:10))
-colnames(CT_ME)[1:3] = c('patientcode','ME_groups','response')
-
-
-#Plot
-p4 <- ggplot(CT_ME,aes(y=response,x=ME_groups))+
-  geom_point(aes(colour = perc_CT, 
-                 size =perc_ME))  +   
-scale_color_gradient2(low = "blue",  
-                     mid = "white",
-                     high = "red",
-                     name = "Fraction of Response in TME group")+       
-scale_size(range = c(1, 15),name = "Fraction of TME in Response")  
-
-pdf('/home/jana/Desktop/R_dat/Response_TME_groups_flipped.pdf',width = 10, height = 10)
-p4
-dev.off()
-
 ```
 
-Boxplots of cell type densities across TME patient groups
+Coxph on clinical patient subgroups and metacluster densities to compare nested models using likelihood ratio tests
 ```{r}
-CT_ME = merge(ME, cluster_dat_tumors,by = 'patientcode')
-CT_ME = CT_ME[!CT_ME$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
-CT_ME = unique(CT_ME[,c('patientcode','groups','cluster','cluster_by_area')])
 
-p <- ggplot(CT_ME, aes( as.factor(groups),cluster_by_area, fill = as.factor(cluster) ))+ 
-     geom_boxplot()+
-   scale_fill_manual(values = mycols_basel_meta[sort(as.numeric(unique(cluster_dat_tumors$cluster)))])+
-   ylim(0,0.003)
-
-pdf(file=paste0("/home/jana/Desktop/R_dat/ME_celltype_boxplot.pdf"), width=25, height=10)
-p
-dev.off()
-
-```
-
-Bonferroni corrected pairwise t-tests on cell type densities across SCP/TME/Clinical patient groups
-```{r}
-#SCP groups
-working_dat = cluster_dat_tumors[,c('patientcode','patient_pheno','cluster','cluster_by_area')]
-working_dat = unique(working_dat)
-working_dat$patient_pheno = as.factor(working_dat$patient_pheno)
-working_dat[,nr_patients := length(unique(patientcode)), by = 'patient_pheno']
-
-#Loop through each cell type and apply pairwise t-tests between the groups, account for unequal variances (var.eq = FALSE)
-for (x in c(2:5,7:11,13:25,27)){
-  res[[x]] = pairwise.t.test(working_dat$cluster_by_area[working_dat$cluster == x],factor(working_dat$patient_pheno[working_dat$cluster == x]),p.adjust.method = 'bonferroni', pool.sd = FALSE, var.eq = FALSE) 
-}
-
-
-
-
-#Clinical groups
-working_dat = cluster_dat_tumors[,c('patientcode','clinical_type','cluster','cluster_by_area')]
-working_dat = unique(working_dat)
-working_dat = working_dat[!working_dat$clinical_type == '',]
-working_dat$clinical_type = as.factor(working_dat$clinical_type)
-working_dat[,nr_patients := length(unique(patientcode)), by = 'clinical_type']
-
-#Loop through each cell type and apply pairwise t-tests between the groups, account for unequal variances (var.eq = FALSE)
-for (x in c(1:5,7:26)){
-  res[[x]] = pairwise.t.test(working_dat$cluster_by_area[working_dat$cluster == x],factor(working_dat$clinical_type[working_dat$cluster == x]),p.adjust.method = 'bonferroni', pool.sd = FALSE, var.eq = FALSE) 
-  }
-
-
-#TME groups
-working_dat = CT_ME[,c('patientcode','groups','cluster','cluster_by_area')]
-working_dat = unique(working_dat)
-working_dat$groups = as.factor(working_dat$groups)
-working_dat[,nr_patients := length(unique(patientcode)), by = 'groups']
-
-#Loop through each cell type and apply pairwise t-tests between the groups, account for unequal variances (var.eq = FALSE)
-for (x in c(1:5,7:26)){
-  res[[x]] = pairwise.t.test(working_dat$cluster_by_area[working_dat$cluster == x],factor(working_dat$groups[working_dat$cluster == x]),p.adjust.method = 'bonferroni', pool.sd = FALSE, var.eq = FALSE) 
-  }
-
-```
-
-Coxph on celltypes to get hazard ratio for risk and compare nested models using likelihood ratio tests
-```{r}
-#Prepare data
-celltype_dat = merge(unique(Sample_metadata[,c('patientcode','OSmonth','Patientstatus')]),patient_wide_densities, by = 'patientcode')
+#Compare nested models for single-cells
+#Prepare
+patient_wide_densities$PID = as.character(patient_wide_densities$PID)
+Sample_metadata$PID = as.character(Sample_metadata$PID)
+celltype_dat = merge(unique(Sample_metadata[,c('PID','OSmonth','Patientstatus')]),patient_wide_densities, by = 'PID')
 celltype_dat = celltype_dat[!is.na(celltype_dat$OSmonth),]
 colnames(celltype_dat)[-c(1:3)] = paste0('cluster_',colnames(celltype_dat)[-c(1:3)])
 
-#Change Unit so the values aren't all super small
-celltype_dat = cbind(celltype_dat[,c(1:3)],data.table(as.matrix(celltype_dat[,-c(1:3)]) * 1000))
+#Change Unit so the density values are well above 1 (setting zeros to 1 after so they will be zeros again after log)
+celltype_dat = cbind(celltype_dat[,c(1:3)],data.table(as.matrix(celltype_dat[,-c(1:3)]) * 10000000))
+
+#log transf
+bin = celltype_dat[,-c(1:3)]
+bin[bin ==0] = 1
+bin= log(bin)
+celltype_dat = cbind(celltype_dat[,c(1:3)],bin)
 
 #Add metadata
-celltype_dat = merge(celltype_dat,unique(cluster_dat_tumors[,c('patientcode','grade','age','PTNM_T','PTNM_M','tumor_size','PTNM_N','histology','patient_pheno','clinical_type')]), by = 'patientcode')
+celltype_dat = merge(celltype_dat,unique(cluster_dat_tumors[,c('PID','grade','age','PTNM_T','PTNM_M','tumor_size','PTNM_N','histology','patient_pheno','clinical_type')]), by = 'PID')
 
 #Adjust censoring depending on whether you are interested in overal or disease free survival (here overal)
 celltype_dat$censoring[str_detect(celltype_dat$Patientstatus,'death by primary disease')] = 1
 celltype_dat$censoring[is.na(celltype_dat$censoring)] = 0
 
-#Add Microenvironment groups
-celltype_dat = merge(celltype_dat,ME,by = 'patientcode')
-celltype_dat$groups = as.factor(celltype_dat$groups)
-
-#Exclude too small patient group
-celltype_dat = celltype_dat[!celltype_dat$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
-celltype_dat$patient_pheno = factor(celltype_dat$patient_pheno, levels = c(1:17))
-
 # Compare any 2 nested models using likelihood ratio tests (add in or leave away different variables)
-res.cox1 <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ clinical_type , data =  celltype_dat)#  clinical_type + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8  + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17 +cluster_18 +cluster_19 +cluster_20 + cluster_21 + cluster_22 + cluster_23 + cluster_24 + cluster_25 + cluster_26 + grade + age + PTNM_T + PTNM_N + PTNM_M  + tumor_size + 
-res.cox2 <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~clinical_type + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8  + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17 +cluster_18 +cluster_19 +cluster_20 + cluster_21 + cluster_22 + cluster_23 + cluster_24 + cluster_25 + cluster_26 + cluster_27, data =  celltype_dat)
-summary(res.cox)
-coefs = res.cox$coef
-HR = exp(coefs)
-CI = exp(confint(res.cox))
-
-#Likelihood ratio test
+celltype_dat$grade = factor(celltype_dat$grade,levels = 3:1)
+celltype_dat$clinical_type = factor(celltype_dat$clinical_type,levels = c('HR+HER2-','TripleNeg','HR+HER2+','HR-HER2+',''))
+res.cox1 <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ clinical_type + grade , data =  celltype_dat)
+res.cox2 <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ clinical_type + grade + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8  + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17 +cluster_18 +cluster_19 +cluster_20 + cluster_21 + cluster_22 + cluster_23 + cluster_24 + cluster_25 + cluster_26 + cluster_27, data =  celltype_dat)
+summary(res.cox2)
 anova(res.cox1,res.cox2)
 
+CI = confint(res.cox2)
+df <- data.frame(x = names(res.cox2$coefficients),
+                 F = exp(res.cox2$coefficients),
+                 L = exp(CI[,1]),
+                 U = exp(CI[,2]))
+df = data.table(df)
+df = df[order(F),]
+df$x = factor(df$x, levels = df$x)
+df$sign[df$L < 1 & df$U < 1] = 1
+df$sign[df$L > 1 & df$U > 1] = 1
+df$sign[is.na(df$sign)] = 0
+df$sign = factor(df$sign)
 
+g = ggplot(df, aes(x = x, y = F, color = sign)) +
+  geom_point(size = 4) +
+  geom_errorbar(aes(ymax = U, ymin = L))+
+  scale_color_manual(values = c('light blue','red'))+
+  coord_flip()+ylim(0,20)+
+  geom_hline(yintercept = 1,color = 'blue')
 
-# Test for significant difference in survival of each clinical subgroup vs rest
+pdf('HazardRatios_clinical_and_single_cell.pdf',width = 20, height = 10)
+g
+dev.off()
+```
 
-pdf('/home/jana/Desktop/R_dat/clinicla_surv_sign.pdf',height = 10, width = 20)
+Use Coxph/logrank tests compare survival across different groups
+```{r}
+
+#Test for significant difference in survival of each clinical subgroup to all other patients
+pdf('clinicla_surv_sign.pdf',height = 10, width = 20)
 for (i in c('HR-HER2+','HR+HER2+','HR+HER2-','TripleNeg')){
   celltype_dat$grp = NULL
   celltype_dat$grp[celltype_dat$clinical_type == i] = 1
   celltype_dat$grp[is.na(celltype_dat$grp)] = 0
-  
   res.cox <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ grp, data =  celltype_dat)
   textplot(capture.output(summary(res.cox)))
   title(as.character(i))
 }
 dev.off()
 
-
-
-# Survival of each patient group vs rest
-
-patientgroup_dat = merge(unique(Sample_metadata[,c('patientcode','OSmonth','DFSmonth','Patientstatus')]),cluster_dat_tumors[,c('patientcode','grade','age','PTNM_T','PTNM_M','tumor_size','PTNM_N','histology','patient_pheno','clinical_type')], by = 'patientcode')
+#Test for significant difference in survival of each SCP patient group to all other patients
+patientgroup_dat = merge(unique(Sample_metadata[,c('PID','OSmonth','DFSmonth','Patientstatus')]),cluster_dat_tumors[,c('PID','grade','age','PTNM_T','PTNM_M','tumor_size','PTNM_N','histology','patient_pheno','clinical_type')], by = 'PID')
 patientgroup_dat = patientgroup_dat[!is.na(patientgroup_dat$OSmonth),]
 patientgroup_dat = unique(patientgroup_dat)
 
@@ -2609,15 +1475,15 @@ patientgroup_dat$censoring[is.na(patientgroup_dat$censoring)] = 0
 
 patientgroup_dat$patient_pheno = factor(patientgroup_dat$patient_pheno, levels = c(1:17))
 
-#exclude too small patienty group
-patientgroup_dat = patientgroup_dat[!patientgroup_dat$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
+#Exclude too small patient group
+patientgroup_dat = patientgroup_dat[!patientgroup_dat$PID %in% c('93','276','200'),]
 
 # #If only testing within patient group category select here
-#patientgroup_dat = patientgroup_dat[patientgroup_dat$patient_pheno %in% c(6:8),]
-#patientgroup_dat = patientgroup_dat[patientgroup_dat$clinical_type == 'HR+HER2+',]
+#patientgroup_dat = patientgroup_dat[patientgroup_dat$patient_pheno %in% c(1:3),]
+#patientgroup_dat = patientgroup_dat[patientgroup_dat$clinical_type == 'HR+HER2-',]
 
-#Coxph to test sign difference of one group to rest
-pdf('/home/jana/Desktop/R_dat/one_vs_rest_sign.pdf',height = 15, width = 20)
+#Coxph to test sign difference of one SCP group to rest
+pdf('SCP_one_vs_rest_sign.pdf',height = 15, width = 20)
 for (i in c(1:17)){
   patientgroup_dat$grp = NULL
   patientgroup_dat$grp[patientgroup_dat$patient_pheno == i] = 1
@@ -2629,8 +1495,8 @@ for (i in c(1:17)){
 }
 dev.off()
 
-#logrank to test sign difference of one group to rest
-pdf('/home/jana/Desktop/R_dat/one_vs_rest_sign_logrank.pdf',height = 10, width = 20)
+#Logrank to test sign difference of one SCP group to rest
+pdf('SCP_one_vs_rest_sign_logrank.pdf',height = 10, width = 20)
 for (i in c(1:17)){
   one_vs_others = NULL
   one_vs_others[patientgroup_dat$patient_pheno == i ] = 1
@@ -2643,131 +1509,16 @@ dev.off()
 
 ```
 
-
-
-#Celltype effect for HR and mixed groups
+Kaplan-Meier survival curves for SCP patient subgroups
 ```{r}
-celltype_dat = merge(unique(Sample_metadata[,c('patientcode','OSmonth','Patientstatus')]),patient_wide, by = 'patientcode') #patient_wide_densities
-celltype_dat = celltype_dat[!is.na(celltype_dat$OSmonth),]
-colnames(celltype_dat)[-c(1:3)] = paste0('cluster_',colnames(celltype_dat)[-c(1:3)])
-
-
-#Add metadata
-celltype_dat = merge(celltype_dat,unique(cluster_dat_tumors[,c('patientcode','grade','age','PTNM_T','PTNM_M','tumor_size','PTNM_N','histology','patient_pheno','clinical_type')]), by = 'patientcode')
-
-#Adjust censoring depending on whether you are interested in overal or disease free survival (here overal)
-celltype_dat$censoring[str_detect(celltype_dat$Patientstatus,'death by primary disease')] = 1
-celltype_dat$censoring[is.na(celltype_dat$censoring)] = 0
-
-
-celltype_dat = merge(celltype_dat,shannon_patient[,-c('patient_pheno')],by = 'patientcode')
-
-celltype_dat = merge(celltype_dat,Invasive,by = 'patientcode')
-
-#HR
-celltype_dat = celltype_dat[patient_pheno %in% c(1:3,11,16),]
-
-#Pinks
-celltype_dat = celltype_dat[patient_pheno %in% c(4:7,9:10),]
-
-
-#TNBC
-celltype_dat = celltype_dat[patient_pheno %in% c(14,15,17),]
-
-
-#Individuals
-celltype_dat = celltype_dat[patient_pheno %in% i,]
-
-
-#avg shannon per group
-celltype_dat[,avgShannon := mean(shannon), by = 'patient_pheno']
-
-
-
-# Compare any 2 nested models using likelihood ratio tests (add in or leave away different variables)
-res.cox1 <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ clinical_type , data =  celltype_dat)
-res.cox2 <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ clinical_type + cluster_23 + cluster_22 + cluster_21, data =  celltype_dat)
-res.cox <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~  shannon , data =  celltype_dat)
-res.cox <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ avgShannon , data =  celltype_dat)
-res.cox <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ log_frac , data =  celltype_dat)
-res.cox <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ clinical_type + frac , data =  celltype_dat)
-
-summary(res.cox)
-coefs = res.cox$coef
-HR = exp(coefs)
-CI = exp(confint(res.cox))
-
-#Likelihood ratio test
-anova(res.cox1,res.cox2)
-
-```
-
-```{r}
-#Read in fragmentation score (avg size of communities based on tumor cell types)
-frag = fread('/home/jana/Desktop/R_dat/fragmentation.csv', header = T)
-
-test = unique(frag$core)
-split_core = strsplit(frag$core,'_', fixed = TRUE)
-frag$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
-#Replace the ones that don't need acquisition number again
-short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
-duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
-in_cores_index = unlist(lapply(unique(frag$core)[duplicate_idx],function(x){which(frag$core %in% x)}))
-frag$core[setdiff(1:length(frag$core),in_cores_index)] = unlist(lapply(strsplit(frag$core[setdiff(1:length(frag$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
-#Delete zeros from core names
-frag$core = unlist(lapply(frag$core,function(x){gsub("000","",x)}))
-
-frag = merge(frag,unique(Sample_metadata[,c('core','patientcode')]), by = 'core')
-frag[,frag_patient := mean(MeanSize),by = 'patientcode']
-
-#For coxph
-celltype_dat = merge(celltype_dat,unique(frag[,c('patientcode','frag_patient')]), by = 'patientcode')
-
-
-frag = merge(frag, ME, by = 'patientcode')
-frag$groups = factor(frag$groups)
-
-
-
-p <- ggplot(frag, aes(x=factor(groups), y=frag_patient)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("Ratio invasive")+
-  xlab("Patientgroup")+
-  theme(panel.background = element_blank())+
-  ggtitle('Ration tumor to stroma outside tumor')
-
-pdf('/home/jana/Desktop/R_dat/Invasive_cells.pdf')
-p
-dev.off()
-
-
-Invasive_frag = merge(Invasive, unique(frag[,c('patientcode','frag_patient')]), by = 'patientcode')
-
-p <- ggplot(Invasive_frag, aes(x=frac, y=frag_patient)) + 
-  geom_point()
-
-pdf('/home/jana/Desktop/R_dat/Invasive_cells.pdf')
-p
-dev.off()
-
-```
-
-Kaplan-Meier survival curves SCP patient groups
-```{r}
-#Read after used in matlab (not necessarily from matlab, can also take R table from section above but have to make sure censoring is correct for DFS or OS)
-# surv_dat <- fread('/home/jana/Desktop/R_dat/survival_curves_tumors.csv', header = TRUE, check.names = TRUE)
-# surv_dat = surv_dat[order(surv_dat$patient_pheno),]
 
 #Prepare data
-surv_dat = merge(unique(Sample_metadata[,c('patientcode','OSmonth','Patientstatus')]), meta_patient_clustering, by= 'patientcode')
-#surv_dat = merge(unique(Sample_metadata[,c('patientcode','OSmonth','DFSmonth','Patientstatus')]), meta_patient_clustering, by= 'patientcode')
+surv_dat = merge(unique(Sample_metadata[,c('PID','OSmonth','Patientstatus')]), meta_patient_clustering, by= 'PID')
+#surv_dat = merge(unique(Sample_metadata[,c('PID','OSmonth','DFSmonth','Patientstatus')]), meta_patient_clustering, by= 'PID')
 surv_dat = surv_dat[order(surv_dat$patient_pheno),]
 
 #Exclude too small patient group 5
-surv_dat = surv_dat[!surv_dat$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
+surv_dat = surv_dat[!surv_dat$PID %in% c('93','276','200'),]
 
 #Adjust censoring depending on whether you are interested in overal or disease free survival (here overal)
 surv_dat$censoring[str_detect(surv_dat$Patientstatus,'death by primary disease')] = 1
@@ -2777,25 +1528,17 @@ surv_dat$censoring[is.na(surv_dat$censoring)] = 0
 # surv_dat$censoring[is.na(surv_dat$censoring)] = 0
 # surv_dat$censoring[surv_dat$OSmonth > surv_dat$DFSmonth] = 1 #uncomment for DFS
 
-SurvObj <- Surv(surv_dat$DFSmonth, surv_dat$censoring)
+SurvObj <- Surv(surv_dat$OSmonth, surv_dat$censoring)
 km.as.groups <- survfit(SurvObj ~ surv_dat$patient_pheno)
 km.as.one <- survfit(SurvObj ~ 1)
 
-#Plot all patient group survival curves on top of each other, plus over all curve in black
-pdf('....pdf',width = 10,height = 20)
-plot(km.as.groups,mark.time = T,col = mycols_patient[unique(surv_dat$patient_pheno)])
-par(new=TRUE)
-plot(km.as.one,mark.time = T,col = "black")
-legend(1,1,unique(surv_dat$patient_pheno),mycols_patient[unique(surv_dat$patient_pheno)])
-dev.off()
-
 #Plot the patient group survival curves next to each other
-pdf('....pdf',width = 20,height = 20)
+pdf('survival_curves_SCP.pdf',width = 20,height = 20)
 par(mfrow=c(4,5))
 for (i in unique(surv_dat$patient_pheno)){
   cur = unique(surv_dat$patient_pheno)[unique(surv_dat$patient_pheno) == i]
   cur_dat = subset(surv_dat, surv_dat$patient_pheno == cur)
-  SurvObj_cur <- Surv(cur_dat$DFSmonth, cur_dat$censoring)
+  SurvObj_cur <- Surv(cur_dat$OSmonth, cur_dat$censoring)
   km.cur.group <- survfit(SurvObj_cur ~ cur_dat$patient_pheno)
   plot(km.cur.group,mark.time = T,col = mycols_patient[cur],xlim=range(1:242))
   par(new=TRUE)
@@ -2806,43 +1549,13 @@ dev.off()
 
 ```
 
-Kaplan-Meier survival curves TME patient groups
+Kaplan-Meier survival curves for grade
 ```{r}
 
-surv_dat = merge(unique(Sample_metadata[,c('patientcode','OSmonth','Patientstatus')]), ME, by= 'patientcode')
-surv_dat = surv_dat[order(surv_dat$groups),]
-
-#Adjust censoring depending on whether you are interested in overal or disease free survival (here overal)
-surv_dat$censoring[str_detect(surv_dat$Patientstatus,'death by primary disease')] = 1
-surv_dat$censoring[is.na(surv_dat$censoring)] = 0
-
-
-SurvObj = Surv(surv_dat$OSmonth, surv_dat$censoring)
-km.as.one <- survfit(SurvObj ~ 1)
-
-pdf('/home/jana/Desktop/R_dat/Survival_TME.pdf',width = 20,height = 20)
-par(mfrow=c(4,5))
-for (i in unique(sort(surv_dat$groups))){
-  cur = unique(surv_dat$groups)[unique(surv_dat$groups) == i]
-  cur_dat = subset(surv_dat, surv_dat$groups == cur)
-  SurvObj_cur = Surv(cur_dat$OSmonth, cur_dat$censoring)
-  km.cur.group <- survfit(SurvObj_cur ~ cur_dat$groups)
-  plot(km.cur.group,mark.time = T,col = 'green',xlim=range(1:242))
-  par(new=TRUE)
-  plot(km.as.one,mark.time = T,col = "black",xlim=range(1:242))
-  legend("bottomleft",1,cur,'green', cex=3)
-}
-dev.off()
-
-```
-
-Kaplan-Meier survival curves grade
-```{r}
-clin_surv = merge(surv_dat,Sample_metadata[,c('patientcode','grade')], by = 'patientcode')
+clin_surv = merge(surv_dat,Sample_metadata[,c('PID','grade')], by = 'PID')
 clin_surv = unique(clin_surv)
 
-
-pdf('/home/jana/Desktop/R_dat/grade_KM.pdf',width = 20,height = 20)
+pdf('survival_curves_grade.pdf',width = 20,height = 20)
 par(mfrow=c(4,5))
 for (i in 1:3){
   cur_dat = subset(clin_surv, clin_surv$grade == i)
@@ -2857,13 +1570,13 @@ dev.off()
 
 ```
 
-Kaplan-Meier survival curves Clinical patient groups
+Kaplan-Meier survival curves clinical patient subtypes
 ```{r}
-clin_surv = merge(surv_dat,Sample_metadata[,c('patientcode','clinical_type')], by = 'patientcode')
+clin_surv = merge(surv_dat,Sample_metadata[,c('PID','clinical_type')], by = 'PID')
 clin_surv = unique(clin_surv)
 clin_surv$clinical_type[clin_surv$clinical_type == ""] = NA
 
-pdf('....pdf',width = 20,height = 20)
+pdf('survival_curves_clinical_subtype.pdf',width = 20,height = 20)
 par(mfrow=c(4,5))
 for (i in 1:(length(unique(clin_surv$clinical_type))-1)){
   cur = unique(clin_surv$clinical_type)[i]
@@ -2882,24 +1595,24 @@ dev.off()
 Distances to tumor-stroma boundary
 ```{r}
 #Import SC distnace data exported from histoCAT (SC distnacens were extracted using regionprops in matlab)
-folder_csv_images <- '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/SC_Distances.csv'
+fn_distances <- '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/SC_Distances.csv'
+cells <- fread(fn_distances, header = TRUE, check.names = TRUE)
+
+# #Adjust to core naming used here as done previously for the data single-cell and metadata in histoCAT2R_dataCleaning.R (because naming slighlty different in histoCAT than here in R pipeline due to metadata) only necessary for first time when loading from Matlab, saved single-cell distance data is already cleaned
+# test = unique(cells$core)
+# split_core = strsplit(cells$core,'_', fixed = TRUE)
+# cells$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
+# #Replace the ones that don't need acquisition number again
+# short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
+# duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
+# in_cores_index = unlist(lapply(unique(cells$core)[duplicate_idx],function(x){which(cells$core %in% x)}))
+# cells$core[setdiff(1:length(cells$core),in_cores_index)] = unlist(lapply(strsplit(cells$core[setdiff(1:length(cells$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
+# 
+# #Delete zeros from core names
+# cells$core = unlist(lapply(cells$core,function(x){gsub("000","",x)}))
 
 # Load the data and get rid of cells for which the distance to mask couldn't be calculated (Inf) because no mask in that image
-cells <- fread(folder_csv_images, header = TRUE, check.names = TRUE)
 cells = cells[!cells$Distances == 'Inf',]
-
-# Adjust to uniform core naming as done previously for the data here in histoCAT2R_dataCleaning.R (because naming slighlty different in histoCAT than here in R pipeline due to metadata)
-test = unique(cells$core)
-split_core = strsplit(cells$core,'_', fixed = TRUE)
-cells$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
-#Replace the ones that don't need acquisition number again
-short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
-duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
-in_cores_index = unlist(lapply(unique(cells$core)[duplicate_idx],function(x){which(cells$core %in% x)}))
-cells$core[setdiff(1:length(cells$core),in_cores_index)] = unlist(lapply(strsplit(cells$core[setdiff(1:length(cells$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
-
-#Delete zeros from core names
-cells$core = unlist(lapply(cells$core,function(x){gsub("000","",x)}))
 
 #Assign StandardID (across entire data set) for every cell
 cells <- cells[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)]
@@ -2909,25 +1622,25 @@ cells <- cells[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)]
 Plot distances
 ```{r}
 
-#Add metacluster info
+#Merge with single-cell metacluster information
 dat_tumor_mask = merge(cells,cluster_pheno, by = 'id')
 
 #Only use tumor cores (not normal samples)
 kick_out_norm = merge(dat_tumor_mask,Sample_metadata,by = 'core')
 kick_out_norm = kick_out_norm[!kick_out_norm$diseasestatus == 'non-tumor',]
-dat_tumor_mask = kick_out_norm[,c('core','patientcode','id','CellId','Distances','Mask','cluster')]
-dat_tumor_mask = merge(dat_tumor_mask,meta_patient_clustering, by = 'patientcode')
+dat_tumor_mask = kick_out_norm[,c('core','PID','id','CellId','Distances','Mask','cluster')]
+dat_tumor_mask = merge(dat_tumor_mask,meta_patient_clustering, by = 'PID')
 dat_tumor_mask[,sum_mask := sum(Mask), by = 'core']
+
+#Kick out images with no cells in tumor mask
 dat_tumor_mask = dat_tumor_mask[!dat_tumor_mask$sum_mask == 0]
 
+#Stacked barplot of cell metacluster counts in tumor/ stromal regions
 dat_tumor_mask$Mask = factor(dat_tumor_mask$Mask)
 dat_tumor_mask[, nrcells := .N, by=c('Mask','cluster')]
-dat_tumor_mask$nrcells = as.double(dat_tumor_mask$nrcells)
-dat_tumor_mask[, sum := sum(nrcells), by = cluster]
 dat_tumor_mask[, percentage_of_clusterCells_in_mask := nrcells/sum(nrcells), by = cluster]
 dat_tumor_mask[,test := sum(percentage_of_clusterCells_in_mask), by = cluster]
 
-#Stacked barplot of cell counts in tumor/ stromal regions
 p <- ggplot(dat_tumor_mask, aes(x=cluster, y=percentage_of_clusterCells_in_mask, fill=Mask)) + 
   geom_bar(stat='identity')+
   scale_fill_manual("Tumor filled mask",values = col_vector)+
@@ -2938,12 +1651,12 @@ p <- ggplot(dat_tumor_mask, aes(x=cluster, y=percentage_of_clusterCells_in_mask,
   theme(panel.background = element_blank())+
   ggtitle('Cluster composition')
 
-pdf(file="....pdf", width=20, height=10)
+pdf(file="sbp_distances.pdf", width=20, height=10)
 p
 dev.off()
 
 
-#Distance plots:
+#Distance density plots
 
 #Log transform distance data and set inside tumor values to negative and outside to positive, and censor if necessary for outliers
 dat_tumor_mask[,log_dist := log(Distances + 1)]
@@ -2973,7 +1686,7 @@ p1 = ggplot(tumor, aes(x = cens_Dist, color = as.factor(cluster))) +
   #facet_wrap( ~ cluster, ncol=1)+
   geom_vline(xintercept = 0)
   #xlim(-7,7)
-pdf('/home/jana/Desktop/R_dat/tumor_count_distances.pdf')
+pdf('tumor_count_distances.pdf')
 p1
 dev.off()
 
@@ -2984,28 +1697,13 @@ p1 = ggplot(stroma, aes(x = cens_Dist, color = as.factor(cluster))) +
   #facet_wrap( ~ cluster, ncol=1)+
   geom_vline(xintercept = 0)#+
   #xlim(-10,10)
-pdf('/home/jana/Desktop/R_dat/stroma_count_distances.pdf')
+pdf('stroma_count_distances.pdf')
 p1
 dev.off()
 
 
-
-#Make separate plot for each celltype, density distributions of distances by SCP patient groups
-for (i in 1:27){
-  group = dat_tumor_mask[dat_tumor_mask$cluster == i,]
-  pdf(file=strcat(c("/home/jana/Desktop/R_dat/Cluster_distances_",as.character(i),".pdf"), collapse = ""))
-  print(ggplot(group, aes(x = cens_Dist, color = as.factor(patient_pheno))) +
-    geom_density(aes(y=..count../.N))+ #can also normalize by area instead of number cells as shown bellow
-    scale_color_manual("Patientgrps",values = mycols_patient[sort(as.numeric(unique(group$patient_pheno)))])+
-    #facet_wrap( ~ cluster, ncol=1)+
-    geom_vline(xintercept = 0)+ 
-    xlim(-6,6))
-  dev.off()
-}
-
-
 #Binned distances for log
-dat_tumor_mask$Dist0[dat_tumor_mask$cens_Dist == 0] = 1
+dat_tumor_mask$Dist0[dat_tumor_mask$cens_Dist == 0] = 1 #all cells that are touching the interface
 dat_tumor_mask$Dist2[(dat_tumor_mask$cens_Dist > 0) & (dat_tumor_mask$cens_Dist <= 2)] = 1
 dat_tumor_mask$Dist3[(dat_tumor_mask$cens_Dist > 2 & dat_tumor_mask$cens_Dist <= 3)] = 1
 dat_tumor_mask$Dist4[(dat_tumor_mask$cens_Dist > 3 & dat_tumor_mask$cens_Dist <= 4)] = 1
@@ -3019,18 +1717,17 @@ dat_tumor_mask$negDist5[(dat_tumor_mask$cens_Dist < -4 & dat_tumor_mask$cens_Dis
 dat_tumor_mask$negDist6[(dat_tumor_mask$cens_Dist < -5 & dat_tumor_mask$cens_Dist >= -6)] = 1
 
 #Exclude patients in too small patient group
-dat_tumor_mask = dat_tumor_mask[!dat_tumor_mask$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
-dat_tumor_mask = merge(ME,dat_tumor_mask, by = 'patientcode')
+dat_tumor_mask = dat_tumor_mask[!dat_tumor_mask$PID %in% c('93','276','200'),]
 
-#Plot cell type fractions in each distances bin per SCP patient group ot TME group
-for (i in  unique(dat_tumor_mask$groups)){ # put c(1:4,6:17) instead for SCP groups
-  dat_tumor_mask_cur = dat_tumor_mask[dat_tumor_mask$groups == i,] #patient_pheno
-  dat_tumor_mask_melted = melt.data.table(dat_tumor_mask_cur, id.vars = c('id','cluster'), measure.vars = colnames(dat_tumor_mask)[17:26], variable.name = 'channel', value.name = 'mc_counts', na.rm = TRUE)
+#Plot cell type fractions in each distance bin per SCP patient group
+for (i in  1:17){ 
+  dat_tumor_mask_cur = dat_tumor_mask[dat_tumor_mask$patient_pheno == i,]
+  dat_tumor_mask_melted = melt.data.table(dat_tumor_mask_cur, id.vars = c('id','cluster'), measure.vars = colnames(dat_tumor_mask)[15:25], variable.name = 'channel', value.name = 'mc_counts', na.rm = TRUE)
   dat_tumor_mask_melted[,tot_cells_channel := .N, by = c('channel')]
   dat_tumor_mask_melted[,freq_dist := sum(mc_counts)/tot_cells_channel, by = c('cluster','channel')]
   dat_tumor_mask_melted = unique(dat_tumor_mask_melted[,c('cluster','channel','freq_dist')])
   
-  pdf(file=paste0("/home/jana/Desktop/R_dat/BinnedDistances_log_MEgrp",as.character(i),".pdf"), width=10, height=10)
+  pdf(file=paste0("BinnedDistances_log_SCPgrp",as.character(i),".pdf"), width=10, height=10)
   print(ggplot(dat_tumor_mask_melted, aes(x=factor(channel, levels = c('negDist6','negDist5','negDist4','negDist3','negDist2','Dist0','Dist2','Dist3','Dist4','Dist5','Dist6')), y=freq_dist, fill=cluster)) + 
     geom_bar(stat='identity')+
     scale_fill_manual("Tumor filled mask",values = mycols_basel_meta[sort(as.numeric(unique(dat_tumor_mask_melted$cluster)))])+
@@ -3044,349 +1741,53 @@ for (i in  unique(dat_tumor_mask$groups)){ # put c(1:4,6:17) instead for SCP gro
 }
 
 
-#Cell type distance density curves per patientgroup
-stroma = stroma[!stroma$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
-tumor = tumor[!tumor$patientcode %in% c('UB_SX_000443','UB_SX_000429','UB_SX_000153'),]
-
-#Add area info to divide subgroup by
-Sample_metadata_cur = Sample_metadata[!is.na(Sample_metadata$area),]
-Sample_metadata_cur[,patient_area := sum(area), by = 'patientcode']
-Sample_metadata_cur = merge(Sample_metadata_cur, ME, by = 'patientcode')
-Sample_metadata_cur[,tot_area_group := sum(unique(patient_area)), by = 'groups']
-Sample_metadata_cur = merge(Sample_metadata_cur, meta_patient_clustering, by = 'patientcode')
-Sample_metadata_cur[,tot_area_SCgroup := sum(unique(patient_area)), by = 'patient_pheno']
-stroma = merge(stroma, Sample_metadata_cur, by = 'core')
-tumor = merge(tumor, Sample_metadata_cur, by = 'core')
-
-
-for (i in c(1:17)){ #unique(stroma$groups) for TME instead of SCP groups
-
-#stroma
-cur_dat = unique(stroma[stroma$patient_pheno.x == i,])#group
-cur_area = unique(cur_dat$tot_area_SCgroup) #group
-pdf(paste0('/home/jana/Desktop/R_dat/SCP_dist',as.character(i),'_stroma.pdf'))
-print(ggplot(cur_dat, aes(x = cens_Dist, color = as.factor(cluster))) +
-  geom_density(aes(y=..count../cur_area))+
-  scale_color_manual("Celltype",values = mycols_basel_meta[sort(as.numeric(unique(cur_dat$cluster)))])+
-  geom_vline(xintercept = 0)+
-  ylim(0,0.001)+
-  xlim(-6,6))
-dev.off()
-
-#tumor
-cur_dat = unique(tumor[tumor$patient_pheno.x == i,])#group
-cur_area = unique(cur_dat$tot_area_SCgroup) #group
-pdf(paste0('/home/jana/Desktop/R_dat/SCP_dist',as.character(i),'_tumor.pdf'))
-print(ggplot(cur_dat, aes(x = cens_Dist, color = as.factor(cluster))) +
-  geom_density(aes(y=..count../cur_area))+
-  scale_color_manual("Celltype",values = mycols_basel_meta[sort(as.numeric(unique(cur_dat$cluster)))])+
-  #facet_wrap( ~ cluster, ncol=1)+
-  geom_vline(xintercept = 0)+
-  ylim(0,0.001)+
-  xlim(-6,6))
-dev.off()
-}
-
-
-#Stacked densities for metaheatmap
-library('ggridges')
-pdf('/home/jana/Desktop/R_dat/meta_cluster.pdf')
-ggplot(data=dat_tumor_mask,aes(x=cens_Dist, y= factor(cluster,levels = as.character(c(26,22:25,20,19,18,17,16,2,1,3:5,7:10,12,11,15,14,21,13,6))), fill= factor(cluster,levels = as.character(c(26,22:25,20,19,18,17,16,2,1,3:5,7:10,12,11,15,14,21,13,6))))) + #hr$labels[hr$order] for small clusters
-    geom_density_ridges()+
-  scale_fill_manual("Cluster",values = mycols_basel_meta[c(26,22:25,20,19,18,17,16,2,1,3:5,7:10,12,11,15,14,21,13,6)])
-dev.off()
-
-#Small clusters
-pdf('/home/jana/Desktop/R_dat/small_cluster.pdf',height = 20,width = 10)
-ggplot(data=dat_tumor_mask,aes(x=cens_Dist, y= factor(cluster,levels = hr$labels[hr$order]), fill= factor(cluster,levels = hr$labels[hr$order]))) + #hr$labels[hr$order] for small clusters
-    geom_density_ridges()+
-  scale_fill_manual("Cluster",values = mycols_basel[hr$order])
-dev.off()
-
-#Meta clusters on small heatmap
-pdf('/home/jana/Desktop/R_dat/meta_cluster_small_heatmap.pdf',height = 10,width = 10)
-ggplot(data=dat_tumor_mask,aes(x=cens_Dist, y= factor(cluster,levels = as.character(c(13,12,11,10,9,8,15,14,7,6,5,4,3,2,1,16,18:20,17,21:26))), fill= factor(cluster,levels = as.character(c(13,12,11,10,9,8,15,14,7,6,5,4,3,2,1,16,18:20,17,21:26))))) + #hr$labels[hr$order] for small clusters
-    geom_density_ridges()+
-  scale_fill_manual("Cluster",values = mycols_basel_meta[c(13,12,11,10,9,8,15,14,7,6,5,4,3,2,1,16,18:20,17,21:26)])
-dev.off()
-
-#not ordered according to heatmap
-pdf('/home/jana/Desktop/R_dat/meta_cluster.pdf')
-ggplot(data=dat_tumor_mask,aes(x=cens_Dist, y= cluster, fill= cluster)) + 
-    geom_density_ridges()+
-  scale_fill_manual("Cluster",values = mycols_basel_meta)
-dev.off()
-
-pdf('/home/jana/Desktop/R_dat/small_cluster.pdf')
-ggplot(data=dat_tumor_mask,aes(x=cens_Dist, y= factor(cluster, levels = cluster_order_basel), fill= factor(cluster, levels = cluster_order_basel))) + 
-    geom_density_ridges()+
-  scale_fill_manual("Cluster",values = mycols_basel)
-dev.off()
-
-```
-
-#nr invasive tumor cells per patient
-```{r}
-
-#Import stroma region area
-areas = fread('/home/jana/Desktop/R_dat/Basel_stroma_area.csv',header =T)
-areas$core = paste0(areas$core,'a0')
-test = unique(areas$core)
-split_core = strsplit(areas$core,'_', fixed = TRUE)
-areas$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
-#Replace the ones that don't need acquisition number again
-short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
-duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
-in_cores_index = unlist(lapply(unique(areas$core)[duplicate_idx],function(x){which(areas$core %in% x)}))
-areas$core[setdiff(1:length(areas$core),in_cores_index)] = unlist(lapply(strsplit(areas$core[setdiff(1:length(areas$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
-
-#Delete zeros from core names
-areas$core = unlist(lapply(areas$core,function(x){gsub("000","",x)}))
-
-dat_tumor_mask = merge(cells,cluster_pheno, by = 'id')
-
-#Only use tumor cores (not normal samples)
-kick_out_norm = merge(dat_tumor_mask,Sample_metadata,by = 'core')
-kick_out_norm = kick_out_norm[!kick_out_norm$diseasestatus == 'non-tumor',]
-dat_tumor_mask = kick_out_norm[,c('core','patientcode','id','CellId','Distances','Mask','cluster')]
-dat_tumor_mask = merge(dat_tumor_mask,meta_patient_clustering, by = 'patientcode')
-dat_tumor_mask[,sum_mask := sum(Mask), by = 'core']
-dat_tumor_mask = dat_tumor_mask[!dat_tumor_mask$sum_mask == 0]
-dat_tumor_mask$Mask = factor(dat_tumor_mask$Mask)
-
-dat_tumor_mask$tumor_cells[dat_tumor_mask$cluster %in% 14:27] = 'Tumor'
-dat_tumor_mask$tumor_cells[is.na(dat_tumor_mask$tumor_cells)] = 'Stroma'
-dat_tumor_mask$tumor_cells = factor(dat_tumor_mask$tumor_cells)
-
-#############Stacked barplot of which tumor cells are invasive, skip if not needed
-sbp = dat_tumor_mask
-sbp[, nrcells := .N, by=c('Mask','core','tumor_cells','cluster')]
-sbp = unique(sbp[,c('patientcode','Mask','core','cluster','tumor_cells','nrcells','patient_pheno')])
-sbp = sbp[Mask == 0,]
-sbp = sbp[tumor_cells == 'Tumor',]
-sbp[,both := nrcells/sum(nrcells) , by = c('core')]
-
-#Stacked barplot of cell counts in tumor/ stromal regions
-p <- ggplot(sbp, aes(x=factor(patient_pheno), y=nrcells, fill=factor(cluster))) + 
-    geom_bar(stat='identity')+
-    scale_fill_manual("Tumor filled mask",values = mycols_basel_meta[14:27])+
-    labs(fill = "Tumor filled mask")+
-    coord_flip()+
-    xlab("Cluster")+
-    ylab("Percentage of cells in mask")+
-    theme(panel.background = element_blank())+
-    ggtitle('Cluster composition')
-#############
-
-dat_tumor_mask[, nrcells := .N, by=c('Mask','core','tumor_cells')]
-dat_tumor_mask_stroma = unique(dat_tumor_mask[,c('patientcode','Mask','core','tumor_cells','nrcells')])
-dat_tumor_mask_stroma = dat_tumor_mask_stroma[Mask == 0,]
-dat_tumor_mask_stroma = merge(dat_tumor_mask_stroma,areas,by = 'core')
-dat_tumor_mask_stroma[,density := nrcells / area]
-
-
-tumor = dat_tumor_mask_stroma[tumor_cells == 'Tumor',c('patientcode','core','density')]
-names(tumor)[3] = 'densitytumor'
-stroma = dat_tumor_mask_stroma[tumor_cells == 'Stroma',c('patientcode','core','density')]
-names(stroma)[3] = 'densitystroma'
-Invasive = merge(tumor,stroma ,by = c('patientcode','core'))
-Invasive[,densitystroma := sum(densitystroma),by = 'patientcode']
-Invasive[,densitytumor := sum(densitytumor),by = 'patientcode']
-Invasive = unique(Invasive[,c('patientcode','densitytumor','densitystroma')])
-Invasive[,log_densitytumor := log(densitytumor)]
-
-
-Invasive = merge(Invasive,unique(cluster_dat_tumors[,c('patientcode','grade','age','PTNM_T','PTNM_M','tumor_size','PTNM_N','histology','patient_pheno','clinical_type')]), by = 'patientcode')
-
-
-#Invasive tumor cells per patient group
-p <- ggplot(Invasive, aes(x=factor(patient_pheno), y=densitytumor)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("Ratio invasive")+
-  xlab("Patientgroup")+
+#Plot cell type fractions in each distance bin across all patient groups
+dat_tumor_mask_melted = melt.data.table(dat_tumor_mask, id.vars = c('id','cluster'), measure.vars = colnames(dat_tumor_mask)[15:25], variable.name = 'channel', value.name = 'mc_counts', na.rm = TRUE)
+dat_tumor_mask_melted[,tot_cells_channel := .N, by = c('channel')]
+dat_tumor_mask_melted[,freq_dist := sum(mc_counts)/tot_cells_channel, by = c('cluster','channel')]
+dat_tumor_mask_melted = unique(dat_tumor_mask_melted[,c('cluster','channel','freq_dist')])
+  
+pdf(file=paste0("BinnedDistances_log",as.character(i),".pdf"), width=10, height=10)
+ggplot(dat_tumor_mask_melted, aes(x=factor(channel, levels = c('negDist6','negDist5','negDist4','negDist3','negDist2','Dist0','Dist2','Dist3','Dist4','Dist5','Dist6')), y=freq_dist, fill=cluster)) + 
+  geom_bar(stat='identity')+
+  scale_fill_manual("Tumor filled mask",values = mycols_basel_meta[sort(as.numeric(unique(dat_tumor_mask_melted$cluster)))])+
+  labs(fill = "Tumor filled mask")+
+  coord_flip()+
+  xlab("Cluster")+
+  ylab("Percentage of cells in mask")+
   theme(panel.background = element_blank())+
-  ggtitle('densitytumor')
-
-pdf('/home/jana/Desktop/R_dat/Invasive_cells.pdf')
-p
+  ggtitle('Cluster composition')
 dev.off()
-
-
-#Invasive tumor cells per stroma community region group
-Invasive = megre(Invasive, neighb_clusters_orig, by = 'patientcode')
-p <- ggplot(Invasive, aes(x=factor(patient_pheno), y=densitytumor)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("Ratio invasive")+
-  xlab("Patientgroup")+
-  theme(panel.background = element_blank())+
-  ggtitle('densitytumor')
-
-pdf('/home/jana/Desktop/R_dat/Invasive_cells.pdf')
-p
-dev.off()
-
-Invasive = megre(Invasive, shannon_patient, by = 'patientcode')
-
-p <- ggplot(Invasive, aes(x=shannon, y=frac)) + 
-  geom_point()
-
-pdf('/home/jana/Desktop/R_dat/Invasive_cells.pdf')
-p
-dev.off()
-
-
-p1 = ggplot(Invasive, aes(x = log_frac)) +
-+     geom_density()
-
 ```
-
-#nr tumor invading immune cells per patient
-```{r}
-
-#Import tumor region area
-areas = fread('/home/jana/Desktop/R_dat/Basel_tumor_area.csv',header =T)
-areas$core = paste0(areas$core,'a0')
-test = unique(areas$core)
-split_core = strsplit(areas$core,'_', fixed = TRUE)
-areas$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
-#Replace the ones that don't need acquisition number again
-short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
-duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
-in_cores_index = unlist(lapply(unique(areas$core)[duplicate_idx],function(x){which(areas$core %in% x)}))
-areas$core[setdiff(1:length(areas$core),in_cores_index)] = unlist(lapply(strsplit(areas$core[setdiff(1:length(areas$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
-
-#Delete zeros from core names
-areas$core = unlist(lapply(areas$core,function(x){gsub("000","",x)}))
-
-
-dat_tumor_mask = merge(cells,cluster_pheno, by = 'id')
-
-#Only use tumor cores (not normal samples)
-kick_out_norm = merge(dat_tumor_mask,Sample_metadata,by = 'core')
-kick_out_norm = kick_out_norm[!kick_out_norm$diseasestatus == 'non-tumor',]
-dat_tumor_mask = kick_out_norm[,c('core','patientcode','id','CellId','Distances','Mask','cluster')]
-dat_tumor_mask = merge(dat_tumor_mask,meta_patient_clustering, by = 'patientcode')
-dat_tumor_mask[,sum_mask := sum(Mask), by = 'core']
-dat_tumor_mask = dat_tumor_mask[!dat_tumor_mask$sum_mask == 0]
-dat_tumor_mask$Mask = factor(dat_tumor_mask$Mask)
-
-dat_tumor_mask$tumor_cells[dat_tumor_mask$cluster %in% 1:13] = 'Stroma'
-dat_tumor_mask$tumor_cells[is.na(dat_tumor_mask$tumor_cells)] = 'Tumor'
-dat_tumor_mask$tumor_cells = factor(dat_tumor_mask$tumor_cells)
-dat_tumor_mask[, nrcells := .N, by=c('Mask','core','tumor_cells')]
-
-
-#############Stacked barplot of which tumor cells are invasive, skip if not needed
-sbp = dat_tumor_mask
-sbp[, nrcells := .N, by=c('Mask','core','tumor_cells','cluster')]
-sbp = unique(sbp[,c('patientcode','Mask','core','cluster','tumor_cells','nrcells','patient_pheno')])
-sbp = sbp[Mask == 1,]
-sbp = sbp[tumor_cells == 'Stroma',]
-sbp[,both := nrcells/sum(nrcells) , by = c('core')]
-
-#Stacked barplot of cell counts in tumor/ stromal regions
-p <- ggplot(sbp, aes(x=factor(patient_pheno), y=nrcells, fill=factor(cluster))) + 
-    geom_bar(stat='identity')+
-    scale_fill_manual("Tumor filled mask",values = mycols_basel_meta[1:13])+
-    labs(fill = "Tumor filled mask")+
-    coord_flip()+
-    xlab("Cluster")+
-    ylab("Percentage of cells in mask")+
-    theme(panel.background = element_blank())+
-    ggtitle('Cluster composition')
-
-sbp = merge(sbp,neighb_clusters_orig,by = 'patientcode')
-
-#############
-
-
-dat_tumor_mask_stroma = unique(dat_tumor_mask[,c('patientcode','Mask','core','tumor_cells','nrcells')])
-dat_tumor_mask_stroma = dat_tumor_mask_stroma[Mask == 1,]
-dat_tumor_mask_stroma = merge(dat_tumor_mask_stroma,areas,by = 'core')
-dat_tumor_mask_stroma[,density := nrcells / area]
-
-tumor = dat_tumor_mask_stroma[tumor_cells == 'Tumor',c('patientcode','core','density')]
-names(tumor)[3] = 'densitytumor'
-stroma = dat_tumor_mask_stroma[tumor_cells == 'Stroma',c('patientcode','core','density')]
-names(stroma)[3] = 'densitystroma'
-Invasive = merge(tumor,stroma ,by = c('patientcode','core'))
-Invasive[,densitystroma := sum(densitystroma),by = 'patientcode']
-Invasive[,densitytumor := sum(densitytumor),by = 'patientcode']
-Invasive = unique(Invasive[,c('patientcode','densitytumor','densitystroma')])
-Invasive[,log_densitytumor := log(densitystroma)]
-
-Invasive = merge(Invasive,unique(cluster_dat_tumors[,c('patientcode','grade','age','PTNM_T','PTNM_M','tumor_size','PTNM_N','histology','patient_pheno','clinical_type')]), by = 'patientcode')
-
-
-
-p <- ggplot(Invasive, aes(x=factor(patient_pheno), y=densitystroma)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("Ratio invasive")+
-  xlab("Patientgroup")+
-  theme(panel.background = element_blank())+
-  ggtitle('densitystroma')
-
-pdf('/home/jana/Desktop/R_dat/Invasive_cells.pdf')
-p
-dev.off()
-
-Invasive = megre(Invasive, shannon_patient, by = 'patientcode')
-
-my.formula <- y ~ x
-
-
-p1 <- ggplot(Invasive, aes(x=shannon, y=frac ))+
-  geom_point(aes(alpha=1, size=1))+ #color=as.factor(GRADE),
-  geom_smooth(method = "lm")+
-  stat_poly_eq(formula = my.formula, 
-                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-                parse = TRUE) +
-  theme_bw()
-
-pdf('/home/jana/Desktop/R_dat/Invasive_cells.pdf')
-p
-dev.off()
-
-```
-
 
 Distances on tSNE
 ```{r}
 setkey(dat_tumor_mask,id)
 
-#Continious values
-p =na.omit(dat_tumor_mask[tsne]) %>%
+#Continious distances to tumor interface
+p =na.omit(dat_tumor_mask[,c('id','cens_Dist')][tsne]) %>%
   ggplot(aes(x=bh_V1, y=bh_V2, color=cens_Dist))+
   geom_point(alpha=0.5, size=1)+
   scale_color_gradientn(colours=rev(brewer.pal(11, 'Spectral')), name='Counts')+
   ggtitle('Distances')
 
-png(file="/home/jana/Desktop/R_dat/Distances_tsne.png")
+png(file="Distances_tsne.png")
 p
 dev.off()
 
-
-p =na.omit(dat_tumor_mask[tsne]) %>%
+#In order outside of tumor mask
+p =na.omit(dat_tumor_mask[,c('id','Mask')][tsne]) %>%
   ggplot(aes(x=bh_V1, y=bh_V2, color=Mask))+
   geom_point(alpha=0.5, size=1)+
   scale_color_manual(values = c('red','blue'))+
   ggtitle('Tumor_mask')
 
-png(file="/home/jana/Desktop/R_dat/Tumormask_tsne.png")
+png(file="Tumormask_tsne.png")
 p
 dev.off()
 ```
 
-#Distance bar for heatmap in Figure1
+#Distance bar for heatmap in Figure1 or for metacluster heatmap (adjust which clustering is used -> don't overwite to metaclusters above if PG clusters should be used)
 ```{r}
 #Prepare data
 dat_tumor_mask = merge(cells,cluster_pheno, by = 'id')
@@ -3394,7 +1795,7 @@ dat_tumor_mask = merge(cells,cluster_pheno, by = 'id')
 #Only use tumor cores
 kick_out_norm = merge(dat_tumor_mask,Sample_metadata,by = 'core')
 kick_out_norm = kick_out_norm[!kick_out_norm$diseasestatus == 'non-tumor',]
-dat_tumor_mask = kick_out_norm[,c('core','patientcode','id','CellId','Distances','Mask','cluster')]
+dat_tumor_mask = kick_out_norm[,c('core','PID','id','CellId','Distances','Mask','cluster')]
 dat_tumor_mask[,sum_mask := sum(Mask), by = 'core']
 dat_tumor_mask = dat_tumor_mask[!dat_tumor_mask$sum_mask == 0]
 
@@ -3408,12 +1809,12 @@ dat_tumor_mask[,test := sum(percentage_of_clusterCells_in_mask), by = cluster]
 #Set inside tumor to negative distances and log transform and censor distances if necessary
 dat_tumor_mask[,log_dist := log(Distances + 1)]
 dat_tumor_mask$log_dist[dat_tumor_mask$Mask == 1] = dat_tumor_mask$log_dist[dat_tumor_mask$Mask == 1] * (-1)
-dat_tumor_mask[,cens_Dist := censor_dat(log_dist,0.99), by=cluster]
+dat_tumor_mask[,cens_Dist := bbRtools::censor_dat(log_dist,0.99), by=cluster]
 dat_tumor_mask[,mean_dist  := mean(cens_Dist), by=cluster]
 
 for_plot = unique(dat_tumor_mask[,c('cluster','mean_dist')])
 
-p3 <- ggplot(for_plot, aes(x=1,y=factor(cluster,levels = hr$labels[hr$order])))+
+p <- ggplot(for_plot, aes(x=1,y=factor(cluster,levels = hr$labels[hr$order])))+
       geom_tile(aes( fill=mean_dist))+
   scale_fill_gradient2( low = "red", mid = "white",
   high = "blue", midpoint = 0, space = "Lab",
@@ -3427,8 +1828,8 @@ p3 <- ggplot(for_plot, aes(x=1,y=factor(cluster,levels = hr$labels[hr$order])))+
           line = element_blank(),
           legend.position="none")
 
-pdf('/home/jana/Desktop/R_dat/distances_for_meta_heatmap.pdf')
-p3
+pdf('distances_for_meta_heatmap.pdf')
+p
 dev.off()
 ```
 
