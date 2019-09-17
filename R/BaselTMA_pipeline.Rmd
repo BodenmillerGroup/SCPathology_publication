@@ -1,10 +1,10 @@
 ---
-title: "R downstream analysis"
+title: "R downstream analysis Basel TMA"
 output: html_notebook
 author: Jana R Fischer
 ---
 
-#Downstream R analysis on final single cell data (after cleaning of SC and metadata, final cleaned data provided)
+#Downstream R analysis for Basel TMA on final single cell data (after cleaning of SC and metadata, final cleaned data provided). Produces all Figure content related to the Basel TMA.
 
 ```{r Libraries, include=FALSE}
 library(data.table)
@@ -14,18 +14,9 @@ library(dplyr)
 library(gplots)
 library(ggplot2)
 library(stringr)
-
-library('Rtsne')
-library(threejs)
-library(destiny)
-library(dtplyr)
-library(gridExtra)
-library('tsne')
-library("corrplot")
-library("ggcorrplot")
-library("ComplexHeatmap")
-library("circlize")
-library('survival')
+library(survival)
+library(ComplexHeatmap)
+library(circlize)
 ```
 
 
