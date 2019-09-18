@@ -1878,18 +1878,6 @@ hex = rgb(RGB_norm)
 <!-- rnb-text-begin -->
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
-<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuXG4jU2luZ2xlIGNlbGwgZGF0YVxuZGF0IDwtIGZyZWFkKGZuX2NlbGxzLGhlYWRlciA9IFQpXG4jTWV0YWRhdGFcblNhbXBsZV9tZXRhZGF0YSA8LSBmcmVhZChmbl9tZXRhLGhlYWRlciA9IFQpXG4jUGhlbm9HcmFwaCBjbHVzdGVyc1xuY3VzdG9tX1BHIDwtIGZyZWFkKGZuX0Jhc2VsUGhlbm8sIGhlYWRlciA9IFQpXG4jdFNORSByZXN1bHRzXG5jdXN0b21fdHNuZSA8LWZyZWFkKGZuX3RzbmUsIGhlYWRlciA9IFQpXG5cbmBgYCJ9 -->
-<pre class="r"><code>
-#Single cell data
-dat &lt;- fread(fn_cells,header = T)
-#Metadata
-Sample_metadata &lt;- fread(fn_meta,header = T)
-#PhenoGraph clusters
-custom_PG &lt;- fread(fn_BaselPheno, header = T)
-#tSNE results
-custom_tsne &lt;-fread(fn_tsne, header = T)
-</code></pre>
-<!-- rnb-source-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
 <p>Display the selected channels for analysis</p>
@@ -2504,6 +2492,19 @@ patient_dat_vars&lt;-transform(patient_dat_vars, channel = as.character(channel)
 <p>Hierarchical clustering of patients (for visualization only: on stacked barplot bellow)</p>
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuIyBIaWVyYXJjaGljYWwgY2x1c3RlcmluZyBvZiBwYXRpZW50cyBiYXNlZCBvbiB0dW1vciBjZWxsdHlwZSBmcmFjdGlvbnNcbnBhdGllbnRfZGF0X3ZhcnMgPSBwYXRpZW50X2RhdF92YXJzW29yZGVyKFBJRCldXG5wYXRpZW50X3dpZGUgPSBkY2FzdC5kYXRhLnRhYmxlKGRhdGEgPXBhdGllbnRfZGF0X3ZhcnMsIGZvcm11bGEgPSAnUElEIH4gY2hhbm5lbCcsXG4gICAgICAgICAgICAgICAgICAgICAgICAgIHZhbHVlLnZhciA9ICd2YWx1ZScsZnVuLmFnZ3JlZ2F0ZSA9IG1lYW4sZmlsbCA9IDApXG5cbmRkIDwtIGRpc3Qoc2NhbGUocGF0aWVudF93aWRlWywyOm5jb2wocGF0aWVudF93aWRlKV0pLCBtZXRob2QgPSBcImV1Y2xpZGVhblwiKVxuaGMgPC0gaGNsdXN0KGRkLCBtZXRob2QgPSBcIndhcmQuRDJcIilcblxuXG4jV3JpdGUgb3V0IGZvciBTQ1AgcGF0aWVudCBzdWJncm91cCBtYXRjaGluZyB3aXRoIG90aGVyIGNvaG9ydCAob3RoZXIgcGlwZWxpbmUpXG5md3JpdGUocGF0aWVudF93aWRlLCdwYXRpZW50X3dpZGVfYmFzZWwuY3N2Jyxjb2wubmFtZXMgID0gVClcbmBgYCJ9 -->
+<pre class="r"><code># Hierarchical clustering of patients based on tumor celltype fractions
+patient_dat_vars = patient_dat_vars[order(PID)]
+patient_wide = dcast.data.table(data =patient_dat_vars, formula = &#39;PID ~ channel&#39;,
+                          value.var = &#39;value&#39;,fun.aggregate = mean,fill = 0)
+
+dd &lt;- dist(scale(patient_wide[,2:ncol(patient_wide)]), method = &quot;euclidean&quot;)
+hc &lt;- hclust(dd, method = &quot;ward.D2&quot;)
+
+
+#Write out for SCP patient subgroup matching with other cohort (other pipeline)
+fwrite(patient_wide,&#39;patient_wide_basel.csv&#39;,col.names  = T)</code></pre>
+<!-- rnb-source-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
 <p>Phenograph clustering of patients based on tumor celltype fractions</p>
