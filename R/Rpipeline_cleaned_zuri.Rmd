@@ -157,8 +157,74 @@ dev.off()
 
 ```
 
-#Match PG clusters from Zurich TMA to Basel TMA metacluster
+#Match PG clusters from Zurich TMA to Basel TMA metaclusters
+```{r}
+# Z-score zurich data
+hm_dat_zuri = hm_dat
+hm_dat_zuri = scale(hm_dat_zuri)
 
+#Read in metacluster means from Basel TMA
+hm_dat_basel = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/output_BaselTMA/hm_dat_basel.csv',header = T)
+rownames = hm_dat_basel$V1
+hm_dat_basel = as.matrix(hm_dat_basel[,-1])
+rownames(hm_dat_basel)= rownames
+
+# Z-score basel data
+hm_dat_basel = scale(hm_dat_basel)
+
+#Make sure all the same markers are used
+colnames(hm_dat_zuri)[!colnames(hm_dat_zuri) %in% colnames(hm_dat_basel)] 
+colnames(hm_dat_basel)[!colnames(hm_dat_basel) %in% colnames(hm_dat_zuri)]
+
+#Calculate distances based on correlations between zurich and basel clusters
+crosscor = 1-cor(t(hm_dat_basel),t(hm_dat_zuri),method = 'pearson')
+#Find most similar cluster
+idx_min = apply(crosscor,2,function(x){which(x == min(x))})
+dist_min = apply(crosscor,2,min)
+cluster_match = data.table(rownames(crosscor)[unlist(idx_min)])
+colnames(cluster_match) = 'Basel'
+cluster_match$zuri = colnames(crosscor)
+cluster_match$dist = dist_min
+cluster_match$zuri = as.numeric(cluster_match$zuri)
+cluster_match = cluster_match[order(zuri),]
+
+#Plot heatmap of Zurich PG clusters ordered and colored according to matching Basel metacluster
+p_dat = hm_dat_zuri
+p_dat[p_dat > 2] =2
+p_dat[p_dat < -2] =-2
+p_dat = p_dat[order(as.numeric(rownames(p_dat))),]
+
+
+#Check in validation cohort!
+cluster_match = cluster_match[order(as.numeric(Basel)),]
+#Read in order from output
+p_dat = p_dat[as.character(rev(cluster_match[order(match(cluster_match$Basel[cluster_match$Basel %in% hr$labels[hr$order]],hr$labels[hr$order])),zuri])),]
+p_dat = p_dat[,match(hc$labels[hc$order],colnames(p_dat))]
+
+cols_corresp_basel = mycols_basel_meta[rev(as.numeric(asigned[order(match(asigned$Basel[asigned$Basel %in% hr$labels[hr$order]],hr$labels[hr$order])),Basel]))]
+
+pdf('/home/jana/Desktop/R_dat/zuri_heatmap_color_and_ord_matched_Basel.pdf')
+heatmap.2(p_dat,
+          scale ='none',
+          trace = "none",
+          col=cmap(75), dendrogram = "none", Rowv = FALSE, Colv = FALSE,
+          density.info ='none',
+          cexRow=0.6,
+          cexCol=0.6,
+          margins=c(4,8),
+          xlab = 'Markers',
+          ylab ='Cluster',
+          main = 'PG_norm_slide',
+          colRow = cols_corresp_basel)
+dev.off()
+
+
+fwrite(asigned,'/home/jana/Desktop/R_dat/zurich_basel_celltype_assignments.csv',col.names = T)
+
+
+```
+
+#Marker distributions
 ```{r}
 #per channel
 for (i in unique(dat[channel %in% good_channels,]$channel)){
