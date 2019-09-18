@@ -1,9 +1,10 @@
 ---
   title: "R pipeline clinical paper"
 author: "Jana Fischer"
-date: "05/03/2018"
 html_document: default
 ---
+
+#Downstream R analysis for Zurich TMA on final single cell data (after cleaning of SC and metadata, final cleaned data provided). Produces all Figure content related to the Zurich TMA and aligns with Basel TMA.
   
 ```{r}
 library('data.table')

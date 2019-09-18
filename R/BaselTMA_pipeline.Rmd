@@ -1440,7 +1440,16 @@ g
 dev.off()
 
 
-#Model comparisons:
+#Additional model comparisons:
+#Clinical Type and single-cell densities
+res.cox1 <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ clinical_type , data =  celltype_dat)
+res.cox2 <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ clinical_type + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8  + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17 +cluster_18 +cluster_19 +cluster_20 + cluster_21 + cluster_22 + cluster_23 + cluster_24 + cluster_25 + cluster_26 + cluster_27, data =  celltype_dat)
+anova(res.cox1,res.cox2)
+
+#Grade and single-cell densities
+res.cox1 <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ grade , data =  celltype_dat)
+res.cox2 <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ grade + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8  + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17 +cluster_18 +cluster_19 +cluster_20 + cluster_21 + cluster_22 + cluster_23 + cluster_24 + cluster_25 + cluster_26 + cluster_27, data =  celltype_dat)
+anova(res.cox1,res.cox2)
 
 ```
 
