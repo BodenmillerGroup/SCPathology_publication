@@ -1,426 +1,89 @@
 ---
-  title: "R pipeline clinical paper"
+  title: "R downstream analysis Zurich TMA"
 author: "Jana Fischer"
 html_document: default
 ---
 
-#Downstream R analysis for Zurich TMA on final single cell data (after cleaning of SC and metadata, final cleaned data provided). Produces all Figure content related to the Zurich TMA and aligns with Basel TMA.
+#Downstream R analysis for Zurich TMA on final single cell data (after cleaning of SC and metadata, final cleaned data provided). Produces all Figure content related to the Zurich TMA and aligns with Basel TMA. This pipeline uses output files from the previously run BaselTMA_pipeline. These files are provided in the output folder.
   
 ```{r}
-library('data.table')
-library('Rtsne')
-library(threejs)
-library('RColorBrewer')
-library(destiny)
+library(data.table)
+library(RColorBrewer)
 library(dplyr)
-library(dtplyr)
-library(gplots)
-library(cba)
-library(bbRtools)
 library(gplots)
 library(ggplot2)
-library('stringr')
-library('pracma')
+library(stringr)
 ```
 
 ```{r Settings}
 
-fn_cells = '/home/ubuntu/tmp/server_homes/janaf/Data/2018/Clinical_paper/SpilloverCorrected/R_dat/Basel_final/20180129_renamed_dat.csv'
-fn_meta = '/home/ubuntu/tmp/server_homes/janaf/Data/2018/Clinical_paper/SpilloverCorrected/R_dat/Basel_final/Sample_metadata_final.csv'
-fn_meta_HER2 = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/ZTMA _208_data_Michi.csv'
-fn_spatial <- '/home/ubuntu/tmp/server_homes/janaf/Data/2018/Clinical_paper/SpilloverCorrected/R_dat/Basel_final/Spatial_final.csv'
-fn_custom_tsne <- '/home/ubuntu/tmp/server_homes/janaf/Data/2018/Clinical_paper/SpilloverCorrected/R_dat/tsne_Zuri.csv'
-fn_ZuriPheno <- '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/PhenoGraph_zurich_x1_k30_nomets.csv'
+fn_cells = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/SC_dat.csv'
+fn_meta = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/Zuri_PatientMetadata.csv'
+fn_ZuriPheno = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/PG_zurich.csv'
 
+# Define channels to be excluded
+channel_exclude = c("ImageId" ,"CellId" ,"In115 115InIn115Di","Xe134 134XeXe134Di","Hg202 202HgHg202Di","Pb204 204PbPb204Di","Pb206 206PbPb206Di","ArAr80 80ArArArAr80Di","phospho Erk12", "10311239Ru96Di Rutheni","10311240Ru98Di Rutheni","10311241Ru99Di Rutheni", "10311242Ru100Di Rutheni","10311243Ru101Di Rutheni", "10311244Ru102Di Rutheni","10311245Ru104Di Rutheni","Xe126 126XeXe126Di","I127 127II127Di","Xe131 131XeXe131Di","Pb207 207PbPb207Di","Pb208 208PbPb208Di","EulerNumber","MajorAxisLength","MinorAxisLength", "Orientation","10331253Ir191Di Iridium","2971330Dy161Di EpCAM","Perimeter","1971527Ho165Di bCaten","483739Yb171Di Sox9","Solidity")
 
-# Define excluded channels, the order of the channel names is reversed so they are readable in a heatmap
-crap_channels = c("ImageId" ,"CellId" ,"In115 115InIn115Di","Xe134 134XeXe134Di","Hg202 202HgHg202Di","Pb204 204PbPb204Di","Pb206 206PbPb206Di","ArAr80 80ArArArAr80Di","phospho Erk12", "10311239Ru96Di Rutheni","10311240Ru98Di Rutheni","10311241Ru99Di Rutheni", "10311242Ru100Di Rutheni","10311243Ru101Di Rutheni", "10311244Ru102Di Rutheni","10311245Ru104Di Rutheni","Xe126 126XeXe126Di","I127 127II127Di","Xe131 131XeXe131Di","Pb207 207PbPb207Di","Pb208 208PbPb208Di","EulerNumber","MajorAxisLength","MinorAxisLength", "Orientation","10331253Ir191Di Iridium","2971330Dy161Di EpCAM","Perimeter","1971527Ho165Di bCaten","483739Yb171Di Sox9","Solidity") #,"phospho mTOR","322787Nd150Di cMyc","Nd145 UnknownProteinNd145Di","Percent_Touching","Number_Neighbors"),"1261726In113Di Histone"
-
-
-
+#Save cluster order of Figures
 cluster_order = c('37','4','10','11','27','6','19','22','29','31','24','14','30','32','9','23','33','34','40','13','12','17','20','38','15','26','35','25','8','41','3','39','7','2','21','28','18','5','1','16');
 
-
 ```
 
-
-Load the data, takes ~6 min
+#Load the data
 ```{r}
-#Load all data
+#Single-cell data
 dat <- fread(fn_cells,header = T)
+#Patient metadata
 Sample_metadata <- fread(fn_meta,header = T)
-HER2_meta <- fread(fn_meta_HER2,header = T)
-custom_zuri <- fread(fn_ZuriPheno, header = T)
-custom_tsne <-fread(fn_custom_tsne, header = T)
-spatial <- fread(fn_spatial,header = T,stringsAsFactors = F)
-
-#Zurich only
-dat = dat[str_detect(dat$core,'ZTMA'),]
-spatial = spatial[str_detect(spatial$core,'ZTMA'),]
-Sample_metadata = Sample_metadata[str_detect(Sample_metadata$core,'ZTMA'),]
-
-
-mets = c('Ay12x4','Ay15x6','By1x1','By1x7','By3x7','By4x5','By10x3','By12x3','Cy1x4','Cy11x5','Cy13x5','Cy14x8')
-Sample_metadata$location[str_detect(Sample_metadata$core,mets[1])] <- 'METASTASIS'
-Sample_metadata$location[str_detect(Sample_metadata$core,mets[2])] <- 'METASTASIS'
-Sample_metadata$location[str_detect(Sample_metadata$core,mets[3])] <- 'METASTASIS'
-Sample_metadata$location[str_detect(Sample_metadata$core,mets[4])] <- 'METASTASIS'
-Sample_metadata$location[str_detect(Sample_metadata$core,mets[5])] <- 'METASTASIS'
-Sample_metadata$location[str_detect(Sample_metadata$core,mets[6])] <- 'METASTASIS'
-Sample_metadata$location[str_detect(Sample_metadata$core,mets[7])] <- 'METASTASIS'
-Sample_metadata$location[str_detect(Sample_metadata$core,mets[8])] <- 'METASTASIS'
-Sample_metadata$location[str_detect(Sample_metadata$core,mets[9])] <- 'METASTASIS'
-Sample_metadata$location[str_detect(Sample_metadata$core,mets[10])] <- 'METASTASIS'
-Sample_metadata$location[str_detect(Sample_metadata$core,mets[11])] <- 'METASTASIS'
-Sample_metadata$location[str_detect(Sample_metadata$core,mets[12])] <- 'METASTASIS'
-
-Sample_metadata$grade[str_detect(Sample_metadata$core,mets[1])] <- 'METASTASIS'
-Sample_metadata$grade[str_detect(Sample_metadata$core,mets[2])] <- 'METASTASIS'
-Sample_metadata$grade[str_detect(Sample_metadata$core,mets[3])] <- 'METASTASIS'
-Sample_metadata$grade[str_detect(Sample_metadata$core,mets[4])] <- 'METASTASIS'
-Sample_metadata$grade[str_detect(Sample_metadata$core,mets[5])] <- 'METASTASIS'
-Sample_metadata$grade[str_detect(Sample_metadata$core,mets[6])] <- 'METASTASIS'
-Sample_metadata$grade[str_detect(Sample_metadata$core,mets[7])] <- 'METASTASIS'
-Sample_metadata$grade[str_detect(Sample_metadata$core,mets[8])] <- 'METASTASIS'
-Sample_metadata$grade[str_detect(Sample_metadata$core,mets[9])] <- 'METASTASIS'
-Sample_metadata$grade[str_detect(Sample_metadata$core,mets[10])] <- 'METASTASIS'
-Sample_metadata$grade[str_detect(Sample_metadata$core,mets[11])] <- 'METASTASIS'
-Sample_metadata$grade[str_detect(Sample_metadata$core,mets[12])] <- 'METASTASIS'
-
-
-names(HER2_meta)[2] = c('patientcode')
-Sample_metadata = merge(Sample_metadata,unique(HER2_meta[,c('patientcode','HER2','ER','PR')]), by = 'patientcode',allow.cartesian=TRUE)
-Sample_metadata[HER2 == '+' & (ER == '+' | PR == '+'),'clinical_type'] = 'HR+HER2+'
-Sample_metadata[HER2 == '-' & (ER == '+' | PR == '+'),'clinical_type'] = 'HR+HER2-'
-Sample_metadata[HER2 == '+' & (ER == '-' & PR == '-'),'clinical_type'] = 'HR-HER2+'
-Sample_metadata[HER2 == '-' & (ER == '-' & PR == '-'),'clinical_type'] = 'TripleNeg'
-```
-
-```{r}
-#Add id column constructed of the core name and cellId
-dat[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)] 
-
-spatial[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)] 
-
-#Merge with spatial channels
-idcols <- c('core', 'CellId', 'id')
-dat = dcast.data.table(dat, formula = paste0(paste(idcols, collapse = '+'), '~', 'channel'), value.var = 'mc_counts') 
-dat = merge(dat, spatial, by = c("id","core","CellId"))
-measurevars <- setdiff(colnames(dat), idcols)
-dat <- melt.data.table(dat, id.vars = idcols, measure.vars = measurevars, variable.name = 'channel', value.name = 'mc_counts', na.rm=TRUE)
-
+#PhenoGraph result from publication
+custom_PG <- fread(fn_ZuriPheno, header = T)
 
 ```
 
+#Display the channels used for analysis
 ```{r}
-#Display the selected channels -> double check that they are correct
-good_channels = unique(dat$channel)[!unique(dat$channel) %in% crap_channels]
+good_channels = unique(dat$channel)[!unique(dat$channel) %in% channel_exclude]
 print(good_channels)
 ```
 
-Extract tSNE columns from custom dataset
-```{r}
-
-test = unique(custom_tsne$core)
-
-split_core = strsplit(custom_tsne$core,'_', fixed = TRUE)
-custom_tsne$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
-
-#Replace the ones that don't need acquisition number again
-short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
-duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
-in_cores_index = unlist(lapply(unique(custom_tsne$core)[duplicate_idx],function(x){which(custom_tsne$core %in% x)}))
-custom_tsne$core[setdiff(1:length(custom_tsne$core),in_cores_index)] = unlist(lapply(strsplit(custom_tsne$core[setdiff(1:length(custom_tsne$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
-
-#Delete zeros
-custom_tsne$core = unlist(lapply(custom_tsne$core,function(x){gsub("000","",x)}))
-
-#StandardID
-custom_tsne <- custom_tsne[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)]
-
-# Get tSNE channels
-custom_tsne[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)] 
-tsne_cn = c('id','tSNE2734506159_1','tSNE2734506159_2')
-
-# Save tSNE info
-tsne <- custom_tsne[,tsne_cn, with=FALSE]
-colnames(tsne) <- c("id","bh_V1","bh_V2")
-```
-
-Extract Phenograph columns from custom dataset
-```{r}
-
-test = unique(custom_zuri$core)
-
-split_core = strsplit(custom_zuri$core,'_', fixed = TRUE)
-custom_zuri$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
-
-#Replace the ones that don't need acquisition number again
-short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
-duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
-in_cores_index = unlist(lapply(unique(custom_zuri$core)[duplicate_idx],function(x){which(custom_zuri$core %in% x)}))
-custom_zuri$core[setdiff(1:length(custom_zuri$core),in_cores_index)] = unlist(lapply(strsplit(custom_zuri$core[setdiff(1:length(custom_zuri$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
-
-#Delete zeros
-custom_zuri$core = unlist(lapply(custom_zuri$core,function(x){gsub("000","",x)}))
-
-#StandardID
-custom_zuri <- custom_zuri[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)]
-
-
-
-# Get Phenograph column
-pheno_cn <- c(colnames(custom_zuri)[grep('PhenoGraph', colnames(custom_zuri))])
-pheno_cn <- c("id",pheno_cn)
-pheno_cn <- pheno_cn[c(1,2)]
-cluster_pheno <- custom_zuri[,pheno_cn, with=FALSE]
-
-
-colnames(cluster_pheno) <- c("id","cluster")
-
-
-
-```
-
-#4) Metadata and spatial merge for visualization on tSNE
-# This part is only necessary to display metadata on tSNE maps! If not needed, leave it out!
-Cast dataframe back to wide format to add metadata and melt again (this dataset is only used for tSNE visualizations, not useful to run any further analyses on) -> ignore warning message about data types differing
-```{r}
-#Cast
-idcols <- c('core', 'CellId', 'id')
-dat_meta = dcast.data.table(dat, formula = paste0(paste(idcols, collapse = '+'), '~', 'channel'), value.var = 'normalized_counts') 
-
-#Merge with spatial data
-dat_meta = merge(dat_meta, spatial, by = c('core','CellId','id'), all.x = TRUE, allow.cartesian=TRUE, rm.NA = TRUE)
-
-#Merge with metadata
-dat_meta = merge(dat_meta, Sample_metadata, by = c('core'), all.x = TRUE, allow.cartesian=TRUE, rm.NA = TRUE)
-
-#Melt
-idvars <- c('core', 'CellId', 'id')
-measurevars <- setdiff(colnames(dat_meta), idvars)
-#measurevars <- good_channels
-dat_meta <- melt.data.table(dat_meta, id.vars = idcols, measure.vars = measurevars, variable.name = 'channel', value.name = 'normalized_counts', na.rm=TRUE)
-
-```
-#5) Color maps 
-Define a colormap used for general plots
+#Define a colormap used for general plots
 ```{r Generate a color pallette for plotting}
 qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
 col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
 col_vector = unique(col_vector)
 ```
 
-Define custom colormap with colors according to cell type groups heatmap with epcam, order matters!
+#Define custom colormap with colors according to cell types as used in pulication
 ```{r Generate a color pallette for plotting}
-
-mycols <- colors()[c( 202, #grey
-                      372,504,32,33, #red
-                      8,11,12,#turquois
-                      624,572, #brown
-                      623,535,#orange brown
-                      500, #orange
-                      52,53,55,585,587,54, #burnt orange
-                      498,76,573,#yellow orange
-                      640,641,642,645,456,367, #pink
-                      26,30, #dark blue
-                      636,589,43,121,109, #light blue
-                      652,655,#bright yellow
-                      81,259,86,497,257)] #green
-
-#Write out colors as RGB to use in other software (highlight cell types in histoCAT in same colors)
-#Small Phenograph clusters
-RGB = t(col2rgb(mycols[order(as.numeric(cluster_order))])) #in histoCAT clusters are ordered sequentially according to their cluster number
-RGB_norm = (RGB - min(RGB))/(max(RGB) - min(RGB)) 
-fwrite(data.table(RGB_norm), file='/home/jana/Desktop/R_dat/RGB_basel_meta.csv', col.names = TRUE)
-hex = rgb(RGB_norm)
-
+#colors matched to most similar cell type from Basel TMA (see alignment bellow)
 mycols =c("darkolivegreen","darkolivegreen","darkolivegreen1","green3","cadetblue1","darkslategray1","darkslategray1","yellow","turquoise1","turquoise1","lightskyblue","lightpink","dodgerblue4","blue","blue","aquamarine","aquamarine","aquamarine","aquamarine4","brown1","firebrick","purple4","purple4","purple4","purple4","purple4","darkorchid","darkorchid","darkorchid","salmon","chocolate","chocolate","chocolate","chocolate","orange2","deeppink1","deeppink1","deeppink1","deeppink1","tan4")
 
+#Write out color map for use in other software (e.g. highlight cells in corresponding colors in histoCAT)
 RGB = t(col2rgb(mycols[order(rev(as.numeric(cluster_order)))])) #in histoCAT clusters are ordered sequentially according to their cluster number
 RGB_norm = (RGB - min(RGB))/(max(RGB) - min(RGB)) 
 fwrite(data.table(RGB_norm), file='/home/jana/Desktop/R_dat/RGB_basel_meta.csv', col.names = TRUE)
 hex = rgb(RGB_norm)
-
-#colors for social networks
-c = data.table(sort(as.numeric(cluster_order)))
-names(c) = 'Cluster'
-c$HEX = rgb(RGB_norm)
-c = c[c$Cluster %in% c(1:3,5,7,16,18,21,28,39,41),]
-c = rbind(c,data.frame(Cluster = 100, HEX = 0))
-fwrite(c, file='/home/jana/Desktop/R_dat/RGB_basel_meta_socialNWs.csv', col.names = TRUE)
                 
 ```
-#6) Visualize markers, metadata or samples on tSNE
-Look at an example channel mapped on the tsne, use top version for any marker channel, middle version for metadata channel and bottom version for samples on tSNE
+
+#Extract relevant PhenoGraph columns from custom_PG dataset
 ```{r}
-#Plot marker or continuous spatial features on tSNE
-all_channels <- unique(dat_meta$channel)
-print(all_channels) #To see which number is the marker you want to visualize on the tSNE
-marker = all_channels[5]
-
-censor_val <- 0.999
-
-setkey(dat_meta, id)
-
-#Continious values
-p =subset(dat_meta, channel == marker)[tsne] %>%
-  ggplot(aes(x=bh_V1, y=bh_V2, color=censor_dat(as.numeric(normalized_counts),censor_val,symmetric = F)))+
-  geom_point(alpha=0.5, size=1)+
-  scale_color_gradientn(colours=rev(brewer.pal(11, 'Spectral')), name='Counts')+
-  ggtitle(marker)
-
-#Save as pdf in corresponding size
-pdf(file="....pdf", width=20, height=10)
-p
-dev.off()
-```
-
-```{r}
-#Visualize samples/cohorts/patients on tSNE
-setkey(dat, id)
-
-dat$cohorts[str_detect(dat$core,'Basel')] = 'Basel'
-dat$cohorts[str_detect(dat$core,'ZTMA')] = 'Zuri'
-
-#Discrete values
-p =subset(dat, !duplicated(id))[tsne] %>%
-  ggplot(aes(x=bh_V1, y=bh_V2))+
-  geom_point(size=0.3, alpha=1, aes(color=as.factor(cohorts)))+
-  labs(colour="Samples")+
-  discrete_scale( aesthetics = c("red","blue","green"),palette = rev(brewer.pal(11, 'Spectral')),scale_name = "discrete",name='Factors')+
-  ggtitle("Cores")+
-  guides(color=guide_legend(override.aes=list(size=5)))+
-  theme(strip.background = element_blank(),
-        panel.background=element_rect(fill='white', colour = 'black'),
-        panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        plot.background=element_blank(),
-        legend.key = element_blank())
-
-pdf(file="/home/jana/Desktop/R_dat/tSNE_both_cohorts.pdf", width=140, height=30)
-p
-dev.off()
-
-```
-
-#7) Overview plot of all the channels on the tsne
-```{r plot a t-SNE Map for all the markers}
-
-#plot a t-SNE Map for all the markers
-dat[, c_counts := bbRtools::censor_dat(mc_counts,0.99), by=channel]
-dat[, c_counts_scaled := c_counts, by=channel]
-#dat[, c_counts_scaled := quantile(c_counts_scaled,0.99), by=channel]
-dat[, c_counts_scaled := ((c_counts_scaled - min(c_counts_scaled))/(max(c_counts_scaled) - min(c_counts_scaled))), by=channel]
-dat[c_counts_scaled < 0, c_counts_scaled := 0, by=channel]
-
-#plot high counts last
-#dat_ord = dat[order(c_counts_scaled)]
-setkey(dat,id)
-setkey(tsne,id)
-
-
-p = subset(dat, channel %in% good_channels)[tsne]%>%
-  ggplot(aes(x=bh_V1, y=bh_V2, color=c_counts_scaled))+
-  facet_wrap(~channel, scales = "free", ncol = 10)+
-  geom_point(alpha=0.5, size=0.5)+
-  scale_color_gradientn(colours=rev(brewer.pal(11, 'Spectral')), name='Counts')+
-  ggtitle('Marker overview')+
-  scale_x_discrete(labels = abbreviate)+
-  theme(strip.background = element_blank(),
-        axis.line=element_blank(),
-        axis.text.x=element_blank(),
-        axis.text.y=element_blank(),
-        axis.ticks=element_blank(),
-        axis.title.x=element_blank(),
-        axis.title.y=element_blank(),
-        panel.background=element_blank(),
-        panel.border=element_blank(),
-        panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        plot.background=element_blank()) 
-
-
-#This takes a while, adjust point size: 5 is very small but useful to see all the points without too much overlap for figures I would set the point size to 12 or so
-png("/home/jana/Desktop/R_dat/tSNE_both_overview.png",
-  width     = 5000,
-  height    = 2500,
-  units     = "px",
-  pointsize = 3)
-p
-dev.off()
-```
-
-#9) Display phenograph/flowsom clusters on tSNE
-```{r}
-
-#In case this plot is skipped the keys still need to be set for later analyses
-setkey(dat, id)
-setkey(tsne,id)
-setkey(cluster_pheno,id)
-
-#Order the clusters according to grouped colors from heatmap with epcam
-#Here the factors are hardcoded because they correspond to an older heatmap, but if the levels correspond to the heatmap of the current session: use the order of the of the clusters in the heatmap hr$order
-cluster_pheno$cluster <- factor(cluster_pheno$cluster, levels = cluster_order_meta)
-
-
-p = subset(dat, !duplicated(id))[tsne][cluster_pheno] %>%
-  ggplot(aes(x=bh_V1, y=bh_V2))+
-  geom_point(size=0.3, alpha=1, aes(color=as.factor(cluster)))+
-  labs(colour="Clusters")+
-  scale_color_manual(values = mycols_zuri_basel_meta[as.numeric(cluster_order_meta)])+
-  ggtitle('Phenograph')+
-  guides(color=guide_legend(override.aes=list(size=5)))+
-  theme(strip.background = element_blank(),
-        panel.background=element_rect(fill='white', colour = 'black'),
-        panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        plot.background=element_blank(),
-        legend.key = element_blank())
-
-pdf(file="/home/jana/Desktop/R_dat/metaclusters_on_tsne.pdf", width=10, height=10)
-p
-dev.off()
-```
-
-Test new phenographs
-```{r}
-fn = '/home/jana/Desktop/R_dat/PhenoGraph_zurich_x1_k30_nomets.csv' #so far best including all reclustered
-custom_PG <- fread(fn, header = T)
-
-test = unique(custom_PG$core)
-
-split_core = strsplit(custom_PG$core,'_', fixed = TRUE)
-custom_PG$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
-
-#Replace the ones that don't need acquisition number again
-short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
-duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
-in_cores_index = unlist(lapply(unique(custom_PG$core)[duplicate_idx],function(x){which(custom_PG$core %in% x)}))
-custom_PG$core[setdiff(1:length(custom_PG$core),in_cores_index)] = unlist(lapply(strsplit(custom_PG$core[setdiff(1:length(custom_PG$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
-
-#Delete zeros
-custom_PG$core = unlist(lapply(custom_PG$core,function(x){gsub("000","",x)}))
-
-
-custom_PG[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)] 
-
 # Get Phenograph column
+custom_PG[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)] 
 pheno_cn <- c("id",colnames(custom_PG)[grep('PhenoGraph', colnames(custom_PG))])
 cluster_pheno <- custom_PG[,pheno_cn, with=FALSE]
 colnames(cluster_pheno) <- c("id","cluster")
-
-
-#good_channels = good_channels[!good_channels %in% c("3521227Gd155Di Slug","Nd145 UnknownProteinNd145Di")]
 ```
 
-#10) Plot heatmaps of the phenograph clusters
-Preparation: Convert the data into a matrix to do a heatmap
+#Plot heatmaps of the phenograph clusters for zurich TMA only
 ```{r}
+setkey(dat,id)
+
+#Exclude controls
 dat = dat[!str_detect(dat$core,'control'),]
 dat = dat[!str_detect(dat$core,'non-breast'),]
 
-# #maybe exclude after matching
+#Exclude bad stains (these images are excluded from all further analysis because they turned out to be stained very weakly which resulted in almost all contained cells clustering together)
 dat = dat[!str_detect(dat$core,regex('Ay.x1')),]
 dat = dat[!str_detect(dat$core,regex('Ay..x1')),]
 
@@ -428,74 +91,19 @@ cluster_pheno$cluster <- factor(cluster_pheno$cluster, levels = cluster_order)
 dat[,c_counts := bbRtools::censor_dat(mc_counts,0.99),by = channel]
 #dat[, sc_counts := scale(mc_counts,censor_val), by=channel]
 
-set.seed(2)
 summary_dat = dat[cluster_pheno][ channel %in% good_channels ,list(
   median_val = median(c_counts),
   mean_val= mean(c_counts),
-  #std_val = std(c_counts),
   cell_cluster=.N),
   by=.(channel,cluster)]
-
 
 hm_dat = dcast.data.table(data =summary_dat, formula = 'cluster ~ channel',
                           value.var = 'mean_val') #'median_val' can be exchanged for 'mean_val'
                           
-
-
-# Row names
 trownames = hm_dat$cluster
-
-# Convert to a matrix
 hm_dat = as.matrix(hm_dat[,-1,with=F])
 row.names(hm_dat) = trownames
 
-#hm_dat = scale(hm_dat) why not here?
-```
-
-#Write out for cytocompare
-```{r}
-hm_dat_mean = dcast.data.table(data =summary_dat, formula = 'cluster ~ channel',
-                          value.var = 'mean_val') #'median_val' can be exchanged for 'mean_val'
-                 
-
-hm_dat_std = dcast.data.table(data =summary_dat, formula = 'cluster ~ channel',
-                          value.var = 'std_val') #'median_val' can be exchanged for 'mean_val'
-   
-#omit NA stds                 
-hm_dat_mean[is.na(hm_dat_std)] = NA
-hm_dat_std = na.omit(hm_dat_std)
-hm_dat_mean = na.omit(hm_dat_mean)
-
-
-#mean
-trownames = hm_dat_mean$cluster
-hm_dat_mean = as.matrix(hm_dat_mean[,-1,with=F])
-row.names(hm_dat_mean) = trownames
-
-#std                                
-trownames = hm_dat_std$cluster
-hm_dat_std = as.matrix(hm_dat_std[,-1,with=F])
-row.names(hm_dat_std) = trownames 
-tcolnames = colnames(hm_dat_std)
-                          
-#combine                   
-combined_mat = matrix(paste0(hm_dat_mean,';',hm_dat_std),nrow = nrow(hm_dat_mean),ncol = ncol(hm_dat_mean))
-colnames(combined_mat) = tcolnames
-rownames(combined_mat) = trownames
-
-
-
-colnames(combined_mat)[colnames(combined_mat) == "Nd145 UnknownProteinNd145Di"] = "Nd145Di Twist"
-
-
-write.table(combined_mat, file = "/home/jana/Desktop/R_dat/cytocomp_dat_Zurich.txt", append = FALSE, sep = "\t",
-            row.names = TRUE, col.names = TRUE)
-
-
-nr = unique(summary_dat[,c('cluster','cell_cluster')])
-nr$cluster = as.numeric(nr$cluster)
-nr = nr[order(cluster),]
-fwrite(nr,'/home/jana/Desktop/R_dat/cluster_cell_numbers_zurich.csv',col.names = T)
 ```
 
 Plot the heatmap with z-scoring per marker
@@ -529,7 +137,7 @@ p_dat[p_dat > 2] =2
 p_dat[p_dat < -2] =-2
 
 
-pdf(file="/home/jana/Desktop/R_dat/heatmap_zuri.pdf", width=10, height=10)
+pdf(file="heatmap_zuri.pdf", width=10, height=10)
 
 heatmap.2(p_dat,
           scale ='none',
@@ -543,14 +151,13 @@ heatmap.2(p_dat,
           margins=c(4,8),
           xlab = 'Markers',
           ylab ='Cluster',
-          main = 'PG_norm_slide',
-          colRow = mycols)
-
-
+          main = 'PG_norm_slide')
 
 dev.off()
 
 ```
+
+#Match PG clusters from Zurich TMA to Basel TMA metacluster
 
 ```{r}
 #per channel

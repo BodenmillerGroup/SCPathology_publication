@@ -21,11 +21,6 @@ library(circlize)
 
 
 ```{r Settings}
-#Filepaths
-# fn_cells = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/SCdat_final_old_patientcode.csv'
-# fn_meta = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/Metadata_final.csv'
-# fn_tsne <- '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/tsne_final_old_patientcode.csv'
-# fn_BaselPheno <- '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions_submission/Data_for_submission/PG_final_k20_old_patientcode.csv' 
 
 #Filepaths
 fn_cells = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/SC_dat.csv'
