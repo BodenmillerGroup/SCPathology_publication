@@ -374,9 +374,9 @@ surv = cbind(surv[,c(1:3)],data.table(as.matrix(surv[,-c(1:3)]) * 10000000))
 
 #log transform density values
 bin = surv[,-c(1:3)]
-#bin = log1p(bin)
-bin[bin == 0] = 1
-bin = log(bin)
+bin = log1p(bin)
+# bin[bin == 0] = 1
+# bin = log(bin)
 surv = cbind(surv[,c(1:3)],bin)
 
 
@@ -1001,85 +1001,80 @@ fwrite(d,file = 'enrichment_p_vals_clinical_type_stromal_region.csv',col.names =
 ```
 
 
-#Neighborhood according to stromal communities
+#Neighborhood analysis per image output ordered according to stromal communities clustered heatmap (SE)
 ```{r}
-#d_mat from clustered clustergram stroma
-# 
-# hr = hclust(dist(d_mat), method = "ward.D2")
-# hr_c <- order.optimal(dist(d_mat), hr$merge)
-# hr$order = hr_c$order
-# hr$merge = hr_c$merge
-# 
-# hc = hclust(dist(t(d_mat)), method = "ward.D2")
-# hc_c <- order.optimal(dist(t(d_mat)), hc$merge)
-# hc$order = hc_c$order
-# hc$merge = hc_c$merge
-# order_stroma_sbp = hc$labels[hc$order]
-# 
-# d_mat = d_mat[,order_stroma_sbp]
-# 
-# 
-# h = Heatmap(d_mat, name = "Clustergram", km = 1, col = colorRamp2(c(0, 1), c("white", "red")),
-#      show_row_names = T, show_column_names =  T, cluster_rows = hr,cluster_columns = hc)+
-# 
-# Heatmap(factor(d$group), name = "Patientgroups", show_row_names = FALSE, width = unit(10, "mm"), col = structure(col_vector, names = c(as.character(1:10))))
-# 
-# pdf('/home/jana/Desktop/R_dat/levels_stromalcommunities_ME_colors.pdf',width = 10, height = 20)
-# h
-# dev.off()
+#Read in data from histoCAT neighborhood analysis where stromal/immune clusters are separate but all tumor cells have the same label (100)
+clustergram_dat = read.csv("/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/neighborhood_output/clustergram_allTumors100.csv",header = T)
+clustergram_meta = read.csv("/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/neighborhood_output/clustergram_meta_allTumors100.csv",header = T)
 
 
-pa = pa[order(match(patientcode,o_patients))]
-                    
-clustergram_dat = clustergram_dat[pa$core,]
-
-clustergram_grade = data.table(clustergram_grade)
-clustergram_grade = clustergram_grade[core %in%pa$core,]
-clustergram_grade = clustergram_grade[order(match(core,pa$core))]
-
-splitting_names = pa[order(match(patientcode,names(clusters))),'core']
-splitting = clusters
-names(splitting) = splitting_names$core
-splitting = splitting[order(match(names(splitting),pa$core))]
+colnames(clustergram_meta) = c("core","grade");
+clustergram_meta = cbind(clustergram_meta,clustergram_dat)
+clustergram_meta = merge(clustergram_meta,unique(Sample_metadata[,c('core','PID')]),by = 'core')
+clustergram_meta = clustergram_meta[clustergram_meta$grade %in% as.factor(1:3),]
 
 
+#Sum up duplicated tumor core patients because of failed first acquisitions
+duplicate_idx = duplicated(clustergram_meta$PID) | duplicated(clustergram_meta$PID, fromLast = TRUE)
+duplicated_names = clustergram_meta$PID[duplicate_idx]
+sumed_dup = lapply(unique(duplicated_names), function(x){colSums(clustergram_dat[clustergram_meta$PID == x,])})
+sumed_dup = do.call(rbind, sumed_dup)
+rownames(sumed_dup) = rownames(sumed_dup)[duplicated(clustergram_meta$PID)]
+#And censor back to 1 so they don't have more impact than others
+sumed_dup[sumed_dup == 2] = 1
+sumed_dup[sumed_dup == -2] = -1
+pa_add = clustergram_meta[duplicated(clustergram_meta$PID),]
+grade_add = clustergram_meta[duplicated(clustergram_meta$PID),]
 
-h = Heatmap(clustergram_dat, name = "Clustergram", km = 1, col = colorRamp2(c(-1, 0, 1), c("blue", "white", "red")),
-     show_row_names = TRUE, show_column_names =  TRUE, cluster_rows = F,clustering_method_columns = "ward.D2",split = splitting)+   #  row_order = rev(order_stacked), cluster_rows = FALSE
+clustergram_meta = clustergram_meta[!duplicate_idx,]
+clustergram_dat = clustergram_dat[!duplicate_idx,]
+clustergram_meta = clustergram_meta[!duplicate_idx,]
+clustergram_dat = rbind(clustergram_dat,sumed_dup)
+clustergram_meta = rbind(clustergram_meta,grade_add)
+clustergram_meta = rbind(clustergram_meta,pa_add)
+order_stacked = match(patient_cluster_all$PID,clustergram_meta$PID)
+
+#Order according to SE heatmap
+clustergram_meta = merge(clustergram_meta,meta_patient_clustering,by = 'PID')
+clustergram_meta = merge(clustergram_meta,unique(Sample_metadata[,c('PID','clinical_type')]),by = 'PID')
+clustergram_meta = as.data.table(clustergram_meta)
+clustergram_meta = clustergram_meta[order(match(PID,o_patients))] #use o_patients from unsplit heatmap to reproduce figure from publication
+
+mat = as.matrix(clustergram_meta[,-c('PID','grade','core','patient_pheno','clinical_type')])
+
+
+h = Heatmap(mat, name = "Clustergram", km = 1, col = colorRamp2(c(-1, 0, 1), c("blue", "white", "red")),
+     show_row_names = TRUE, show_column_names =  TRUE, cluster_rows = F,clustering_method_columns = "ward.D2")+   #  row_order = rev(order_stacked), cluster_rows = FALSE
   
 #patient groups
-    Heatmap(pa$patient_pheno, name = "Patient_Groups", show_row_names = FALSE, width = unit(10, "mm"), col = structure(c("white","white",mycols_patient,"chocolate"), names = c('normal',0:17))) +
+    Heatmap(clustergram_meta$patient_pheno, name = "SCP_Patient_Groups", show_row_names = FALSE, width = unit(10, "mm"), col = structure(c(mycols_patient), names = c(1:18))) +
   
 #grades
-  Heatmap(factor(clustergram_grade$grade), name = "Grade", show_row_names = FALSE, width = unit(10, "mm"),col = structure(c("white","green","blue","red","black"), names = c('0','1','2','3','CONTROL')))+
+  Heatmap(factor(clustergram_meta$grade), name = "Grade", show_row_names = FALSE, width = unit(10, "mm"),col = structure(c("white","green","blue","red","black"), names = c('0','1','2','3','CONTROL')))+
   
 #clinical group
-  Heatmap(factor(pa$clinical_type), name = "ClinicalType", show_row_names = FALSE, width = unit(10, "mm"),col = structure(c(mycols_clinical,"white","black","black"), names = c('HR-HER2+','HR+HER2-','HR+HER2+','TripleNeg','normal','control','CONTROL')))
+  Heatmap(factor(clustergram_meta$clinical_type), name = "ClinicalType", show_row_names = FALSE, width = unit(10, "mm"),col = structure(c(mycols_clinical,"white","black","black"), names = c('HR-HER2+','HR+HER2-','HR+HER2+','TripleNeg','normal','control','CONTROL')))
 
-
-
-pdf('/home/jana/Desktop/R_dat/neighborhood_accordingtoComm.pdf',width = 90, height = 60)
+pdf('neighborhood_accordingtoComm.pdf',width = 90, height = 60)
 h
 dev.off()
 
-#Enrichment analysis for neighborhood interactions in stromal community groups
-names(neighb_clusters_orig)[1] = 'patientcode'
-neighb_clusters_orig = merge(neighb_clusters_orig,unique(pa[,c('core','patientcode')]),by = 'patientcode')
-clustergram = as.data.table(clustergram_dat)
-clustergram$core = rownames(clustergram_dat)
-neighb_clusters_orig = merge(neighb_clusters_orig,clustergram,by = 'core')
 
+#Enrichment analysis for certain neighborhood interactions (from permutation test in Matlab) in SE groups
+names(neighb_clusters_orig)[1] = 'PID'
+neighb_clusters_orig = merge(neighb_clusters_orig,unique(clustergram_meta[,c('core','PID')]),by = 'PID')
+neighb_clusters_orig = merge(neighb_clusters_orig,clustergram_meta,by = c('core','PID'))
 neighb_clusters_orig$cluster = as.factor(neighb_clusters_orig$cluster)
 
 #Loop through all SCP patient groups and test for all TMEs each one contains whether there is a significant enrichment
 overview = list()
 counter = 1
-for (i in 4:ncol(neighb_clusters_orig)){
+for (i in 5:(ncol(neighb_clusters_orig)-2)){
   
   
   cur = as.matrix(neighb_clusters_orig[,eval(i),with =F])
   cur[cur == 1] = 0
-  if (sum(cur)< 0){
+  if (sum(cur)< 0){ #adapt sign: run once for positive interactions and once for negative interactions
     cur = as.factor(cur)
   
     #only for positive association
@@ -1100,37 +1095,34 @@ for (i in 4:ncol(neighb_clusters_orig)){
 #Write out overview of results
 d = data.table(do.call(rbind,overview))
 d = d[adjusted_p < 0.05,]
-fwrite(d,file = '/home/jana/Desktop/R_dat/enrichment_StromalCommGroups_significantInteractions_negative.csv',col.names = T)
+fwrite(d,file = 'enrichment_StromalCommGroups_significantInteractions_negative.csv',col.names = T)
 
 ```
 
-
+#Survival analysis microenvironment community densities
 ```{r}
 #stromal
-surv_stroma = unique(nodules_wide[,c('patientcode','cluster','Community','core')])
+surv_stroma = unique(nodules_wide[,c('PID','cluster','Community','core')])
 surv_stroma[,nr_both := .N, by = c('cluster','core')]
 surv_stroma = merge(surv_stroma,unique(Sample_metadata[,c('core','area')]),by = 'core')
 surv_stroma[,nodule_area := nr_both/area, by = 'core']
-surv_stroma[,nodule_area_patient := mean(nodule_area),by = c('patientcode','cluster')]
-surv_stroma = unique(surv_stroma[,c('patientcode','cluster','nodule_area_patient')])
-surv_stroma = dcast.data.table(surv_stroma,'patientcode ~ cluster',fill = 0)
-surv_stroma = merge(unique(Sample_metadata[,c('patientcode','OSmonth','Patientstatus')]),surv_stroma,by = 'patientcode')
+surv_stroma[,nodule_area_patient := mean(nodule_area),by = c('PID','cluster')]
+surv_stroma = unique(surv_stroma[,c('PID','cluster','nodule_area_patient')])
+surv_stroma = dcast.data.table(surv_stroma,'PID ~ cluster',fill = 0)
+surv_stroma = merge(unique(Sample_metadata[,c('PID','OSmonth','Patientstatus')]),surv_stroma,by = 'PID')
 
 surv_stroma = surv_stroma[!is.na(surv_stroma$OSmonth),]
 colnames(surv_stroma)[-c(1:3)] = paste0('cluster_',colnames(surv_stroma)[-c(1:3)])
 
-#Change Unit so the values aren't all super small
+#Change Unit so the density values are well above 1 (setting zeros to 1 after so they will be zeros again after log, zeros represent complete absence of a community type -> should stay zero)
 surv_stroma = cbind(surv_stroma[,c(1:3)],data.table(as.matrix(surv_stroma[,-c(1:3)]) * 10000000))
 
-
-#log transf
+#log transform density values (keep zeros at zero)
 bin = surv_stroma[,-c(1:3)]
-#bin = log1p(bin)
-bin[bin ==0] = 1
-bin= log(bin)
+bin = log1p(bin)
+# bin[bin ==0] = 1
+# bin= log(bin)
 surv_stroma = cbind(surv_stroma[,c(1:3)],bin)
-
-
 
 #Adjust censoring depending on whether you are interested in overal or disease free survival (here overal)
 surv_stroma$censoring[str_detect(surv_stroma$Patientstatus,'death by primary disease')] = 1
@@ -1138,27 +1130,26 @@ surv_stroma$censoring[is.na(surv_stroma$censoring)] = 0
 
 res.cox2 <- coxph(Surv(surv_stroma$OSmonth, surv_stroma$censoring) ~ cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8  + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17 +cluster_18 +cluster_19 +cluster_20 +cluster_21 +cluster_22 +cluster_23 +cluster_24 +cluster_25 +cluster_26 +cluster_27 +cluster_28 +cluster_29 +cluster_30 , data =  surv_stroma)
 summary(res.cox2)
-coefs = res.cox$coef
+coefs = res.cox2$coef
 HR = exp(coefs)
 CI = exp(confint(res.cox))
 
+```
 
-
-
-
-
-#Combined
+#Combined tumor and microenvironment community survival analysis
+```{r}
+#Combined tumor and microenv
 
 colnames(surv_stroma)[-c(1:3,ncol(surv_stroma))] = paste0('stromal_',colnames(surv_stroma)[-c(1:3,ncol(surv_stroma))])
-comb = merge(surv_stroma,surv, by = c('patientcode','OSmonth','Patientstatus','censoring'))
-
+comb = merge(surv_stroma,surv, by = c('PID','OSmonth','Patientstatus','censoring'))
 
 res.cox2 <- coxph(Surv(comb$OSmonth, comb$censoring) ~ stromal_cluster_1 + stromal_cluster_2 + stromal_cluster_3 + stromal_cluster_4 + stromal_cluster_5 + stromal_cluster_6 + stromal_cluster_7 + stromal_cluster_8 + stromal_cluster_9 + stromal_cluster_10 + stromal_cluster_11 + stromal_cluster_12 + stromal_cluster_13 + stromal_cluster_14 + stromal_cluster_15 + stromal_cluster_16 + stromal_cluster_17 + stromal_cluster_18 + stromal_cluster_19 + stromal_cluster_20 + stromal_cluster_21 + stromal_cluster_22 + stromal_cluster_23 + stromal_cluster_24 + stromal_cluster_25 + stromal_cluster_26 + stromal_cluster_27 + stromal_cluster_28 + stromal_cluster_29 + stromal_cluster_30 + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8 + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17  +cluster_18  +cluster_19  +cluster_20  +cluster_21  +cluster_22  +cluster_23 , data =  comb)
 summary(res.cox2)
 
-CI = confint(res2)
-df <- data.frame(x = names(res2$coefficients),
-                 F = exp(res2$coefficients),
+#Plot hazard ratios
+CI = confint(res.cox2)
+df <- data.frame(x = names(res.cox2$coefficients),
+                 F = exp(res.cox2$coefficients),
                  L = exp(CI[,1]),
                  U = exp(CI[,2]))
 df = data.table(df)
@@ -1177,41 +1168,20 @@ g = ggplot(df, aes(x = x, y = F, color = sign)) +
   geom_hline(yintercept = 1,color = 'blue')+
   scale_y_continuous(trans='log')
 
-pdf('/home/jana/Desktop/R_dat/clinical_community_dat_zoomed.pdf',width = 20, height = 10)
+pdf('combined_comm.pdf',width = 20, height = 10)
 g
 dev.off()
 
-#Model comparison
-comb = merge(comb,unique(Sample_metadata[,c('patientcode','clinical_type','grade')]),by = 'patientcode')
 
+#Combined and including clinical features
+#Set reference level
+comb = merge(comb,unique(Sample_metadata[,c('PID','clinical_type','grade')]),by = 'PID')
 comb$grade = factor(comb$grade,levels = 3:1)
 comb$clinical_type = factor(comb$clinical_type,levels = c('HR+HER2-','TripleNeg','HR+HER2+','HR-HER2+',''))
-res1 = coxph(Surv(comb$OSmonth, comb$censoring) ~ clinical_type + grade , data =  comb)
-res2 = coxph(Surv(comb$OSmonth, comb$censoring) ~ clinical_type + grade + stromal_cluster_1 + stromal_cluster_2 + stromal_cluster_3 + stromal_cluster_4 + stromal_cluster_5 + stromal_cluster_6 + stromal_cluster_7 + stromal_cluster_8 + stromal_cluster_9 + stromal_cluster_10 + stromal_cluster_11 + stromal_cluster_12 + stromal_cluster_13 + stromal_cluster_14 + stromal_cluster_15 + stromal_cluster_16 + stromal_cluster_17 + stromal_cluster_18 + stromal_cluster_19 + stromal_cluster_20 + stromal_cluster_21 + stromal_cluster_22 + stromal_cluster_23 + stromal_cluster_24 + stromal_cluster_25 + stromal_cluster_26 + stromal_cluster_27 + stromal_cluster_28 + stromal_cluster_29 + stromal_cluster_30 + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8 + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17  +cluster_18  +cluster_19  +cluster_20  +cluster_21  +cluster_22  +cluster_23 , data =  comb)
 
+res2 = coxph(Surv(comb$OSmonth, comb$censoring) ~ clinical_type + grade + stromal_cluster_1 + stromal_cluster_2 + stromal_cluster_3 + stromal_cluster_4 + stromal_cluster_5 + stromal_cluster_6 + stromal_cluster_7 + stromal_cluster_8 + stromal_cluster_9 + stromal_cluster_10 + stromal_cluster_11 + stromal_cluster_12 + stromal_cluster_13 + stromal_cluster_14 + stromal_cluster_15 + stromal_cluster_16 + stromal_cluster_17 + stromal_cluster_18 + stromal_cluster_19 + stromal_cluster_20 + stromal_cluster_21 + stromal_cluster_22 + stromal_cluster_23 + stromal_cluster_24 + stromal_cluster_25 + stromal_cluster_26 + stromal_cluster_27 + stromal_cluster_28 + stromal_cluster_29 + stromal_cluster_30 + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8 + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17  +cluster_18  +cluster_19  +cluster_20  +cluster_21  +cluster_22  +cluster_23 , data =  comb) #nested clinical and community features
 
-#Likelihood ratio test
-anova(res1,res2)
-
-#Grade and clinical
-res1 = coxph(Surv(comb$OSmonth, comb$censoring) ~ grade , data =  comb)
-res2 = coxph(Surv(comb$OSmonth, comb$censoring) ~ grade + clinical_type , data =  comb)
-anova(res1,res2)
-
-#Grade and clinical
-res1 = coxph(Surv(comb$OSmonth, comb$censoring) ~ stromal_cluster_1 + stromal_cluster_2 + stromal_cluster_3 + stromal_cluster_4 + stromal_cluster_5 + stromal_cluster_6 + stromal_cluster_7 + stromal_cluster_8 + stromal_cluster_9 + stromal_cluster_10 + stromal_cluster_11 + stromal_cluster_12 + stromal_cluster_13 + stromal_cluster_14 + stromal_cluster_15 + stromal_cluster_16 + stromal_cluster_17 + stromal_cluster_18 + stromal_cluster_19 + stromal_cluster_20 + stromal_cluster_21 + stromal_cluster_22 + stromal_cluster_23 + stromal_cluster_24 + stromal_cluster_25 + stromal_cluster_26 + stromal_cluster_27 + stromal_cluster_28 + stromal_cluster_29 + stromal_cluster_30 + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8 + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17  +cluster_18  +cluster_19  +cluster_20  +cluster_21  +cluster_22  +cluster_23  , data =  comb)
-res2 = coxph(Surv(comb$OSmonth, comb$censoring) ~ stromal_cluster_1 + stromal_cluster_2 + stromal_cluster_3 + stromal_cluster_4 + stromal_cluster_5 + stromal_cluster_6 + stromal_cluster_7 + stromal_cluster_8 + stromal_cluster_9 + stromal_cluster_10 + stromal_cluster_11 + stromal_cluster_12 + stromal_cluster_13 + stromal_cluster_14 + stromal_cluster_15 + stromal_cluster_16 + stromal_cluster_17 + stromal_cluster_18 + stromal_cluster_19 + stromal_cluster_20 + stromal_cluster_21 + stromal_cluster_22 + stromal_cluster_23 + stromal_cluster_24 + stromal_cluster_25 + stromal_cluster_26 + stromal_cluster_27 + stromal_cluster_28 + stromal_cluster_29 + stromal_cluster_30 + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8 + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17  +cluster_18  +cluster_19  +cluster_20  +cluster_21  +cluster_22  +cluster_23 + grade  , data =  comb)
-anova(res1,res2)
-
-
-#Within subgroups
-cur = comb[clinical_type == 'TripleNeg',]
-res2 = coxph(Surv(cur$OSmonth, cur$censoring) ~  grade + stromal_cluster_1 + stromal_cluster_2 + stromal_cluster_3 + stromal_cluster_4 + stromal_cluster_5 + stromal_cluster_6 + stromal_cluster_7 + stromal_cluster_8 + stromal_cluster_9 + stromal_cluster_10 + stromal_cluster_11 + stromal_cluster_12 + stromal_cluster_13 + stromal_cluster_14 + stromal_cluster_15 + stromal_cluster_16 + stromal_cluster_17 + stromal_cluster_18 + stromal_cluster_19 + stromal_cluster_20 + stromal_cluster_21 + stromal_cluster_22 + stromal_cluster_23 + stromal_cluster_24 + stromal_cluster_25 + stromal_cluster_26 + stromal_cluster_27 + stromal_cluster_28 + stromal_cluster_29 + stromal_cluster_30 + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8 + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17  +cluster_18  +cluster_19  +cluster_20  +cluster_21  +cluster_22  +cluster_23 , data =  cur)
-
-#Within grade
-cur = comb[grade == 1,]
-res2 = coxph(Surv(cur$OSmonth, cur$censoring) ~ cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8 + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17  +cluster_18  +cluster_19  +cluster_20  +cluster_21  +cluster_22  +cluster_23 , data =  cur)
-
+#Plot hazard ratios
 CI = confint(res2)
 df <- data.frame(x = names(res2$coefficients),
                  F = exp(res2$coefficients),
@@ -1229,420 +1199,55 @@ g = ggplot(df, aes(x = x, y = F, color = sign)) +
   geom_point(size = 4) +
   geom_errorbar(aes(ymax = U, ymin = L))+
   scale_color_manual(values = c('light blue','red'))+
-  coord_flip()+ylim(0,20)+
+  coord_flip()+ylim(0,5)+
   geom_hline(yintercept = 1,color = 'blue')
 
-pdf('/home/jana/Desktop/R_dat/onlyGrade3Patients_onlyEpiCommunities.pdf',width = 20, height = 10)
+pdf('clinical_community_HR_zoomed.pdf',width = 20, height = 10)
 g
 dev.off()
 
 
-#Lasso regularized
 
-comb$OSmonth[comb$OSmonth == 0] = 1
-comb$clinical_type = factor(comb$clinical_type)
-clinical_dummy <- model.matrix( ~ clinical_type, comb)
-comb = cbind(comb,clinical_dummy)
-grade_dummy <- model.matrix( ~ grade, comb)
-comb = cbind(comb,grade_dummy)
-comb = comb[,-c('clinical_type','(Intercept)','grade')]
-cv.fit <- cv.glmnet(as.matrix(comb[,-c('patientcode','OSmonth','Patientstatus','censoring')]), Surv(comb$OSmonth, comb$censoring), family="cox", maxit = 10000)
+#Model comparisons:
+#Grade, clinical type and densities
+res1 = coxph(Surv(comb$OSmonth, comb$censoring) ~ clinical_type + grade , data =  comb) #only clinical features
+res2 = coxph(Surv(comb$OSmonth, comb$censoring) ~ clinical_type + grade + stromal_cluster_1 + stromal_cluster_2 + stromal_cluster_3 + stromal_cluster_4 + stromal_cluster_5 + stromal_cluster_6 + stromal_cluster_7 + stromal_cluster_8 + stromal_cluster_9 + stromal_cluster_10 + stromal_cluster_11 + stromal_cluster_12 + stromal_cluster_13 + stromal_cluster_14 + stromal_cluster_15 + stromal_cluster_16 + stromal_cluster_17 + stromal_cluster_18 + stromal_cluster_19 + stromal_cluster_20 + stromal_cluster_21 + stromal_cluster_22 + stromal_cluster_23 + stromal_cluster_24 + stromal_cluster_25 + stromal_cluster_26 + stromal_cluster_27 + stromal_cluster_28 + stromal_cluster_29 + stromal_cluster_30 + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8 + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17  +cluster_18  +cluster_19  +cluster_20  +cluster_21  +cluster_22  +cluster_23 , data =  comb) #nested clinical and community features
+#Likelihood ratio test between nested models
+anova(res1,res2)
 
-plot(cv.fit)
+#Grade and clinical
+res1 = coxph(Surv(comb$OSmonth, comb$censoring) ~ grade , data =  comb)
+res2 = coxph(Surv(comb$OSmonth, comb$censoring) ~ grade + clinical_type , data =  comb)
+anova(res1,res2)
 
-cv.fit$lambda.min
-Coefficients <- coef(cv.fit, s = cv.fit$lambda.min)
-Active.Index <- which(Coefficients != 0)
-Active.Coefficients <- Coefficients[Active.Index]
-names(comb[,-c('patientcode','OSmonth','Patientstatus','censoring')])[Active.Index]
+#Densities and grade
+res1 = coxph(Surv(comb$OSmonth, comb$censoring) ~ stromal_cluster_1 + stromal_cluster_2 + stromal_cluster_3 + stromal_cluster_4 + stromal_cluster_5 + stromal_cluster_6 + stromal_cluster_7 + stromal_cluster_8 + stromal_cluster_9 + stromal_cluster_10 + stromal_cluster_11 + stromal_cluster_12 + stromal_cluster_13 + stromal_cluster_14 + stromal_cluster_15 + stromal_cluster_16 + stromal_cluster_17 + stromal_cluster_18 + stromal_cluster_19 + stromal_cluster_20 + stromal_cluster_21 + stromal_cluster_22 + stromal_cluster_23 + stromal_cluster_24 + stromal_cluster_25 + stromal_cluster_26 + stromal_cluster_27 + stromal_cluster_28 + stromal_cluster_29 + stromal_cluster_30 + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8 + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17  +cluster_18  +cluster_19  +cluster_20  +cluster_21  +cluster_22  +cluster_23  , data =  comb)
+res2 = coxph(Surv(comb$OSmonth, comb$censoring) ~ stromal_cluster_1 + stromal_cluster_2 + stromal_cluster_3 + stromal_cluster_4 + stromal_cluster_5 + stromal_cluster_6 + stromal_cluster_7 + stromal_cluster_8 + stromal_cluster_9 + stromal_cluster_10 + stromal_cluster_11 + stromal_cluster_12 + stromal_cluster_13 + stromal_cluster_14 + stromal_cluster_15 + stromal_cluster_16 + stromal_cluster_17 + stromal_cluster_18 + stromal_cluster_19 + stromal_cluster_20 + stromal_cluster_21 + stromal_cluster_22 + stromal_cluster_23 + stromal_cluster_24 + stromal_cluster_25 + stromal_cluster_26 + stromal_cluster_27 + stromal_cluster_28 + stromal_cluster_29 + stromal_cluster_30 + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8 + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17  +cluster_18  +cluster_19  +cluster_20  +cluster_21  +cluster_22  +cluster_23 + grade  , data =  comb)
+anova(res1,res2)
 
 
+#Clinical Type and densities
+res1 = coxph(Surv(comb$OSmonth, comb$censoring) ~ clinical_type  , data =  comb)
+res2 = coxph(Surv(comb$OSmonth, comb$censoring) ~ clinical_type + stromal_cluster_1 + stromal_cluster_2 + stromal_cluster_3 + stromal_cluster_4 + stromal_cluster_5 + stromal_cluster_6 + stromal_cluster_7 + stromal_cluster_8 + stromal_cluster_9 + stromal_cluster_10 + stromal_cluster_11 + stromal_cluster_12 + stromal_cluster_13 + stromal_cluster_14 + stromal_cluster_15 + stromal_cluster_16 + stromal_cluster_17 + stromal_cluster_18 + stromal_cluster_19 + stromal_cluster_20 + stromal_cluster_21 + stromal_cluster_22 + stromal_cluster_23 + stromal_cluster_24 + stromal_cluster_25 + stromal_cluster_26 + stromal_cluster_27 + stromal_cluster_28 + stromal_cluster_29 + stromal_cluster_30 + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8 + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17  +cluster_18  +cluster_19  +cluster_20  +cluster_21  +cluster_22  +cluster_23  , data =  comb)
+anova(res1,res2)
 
+#Grade and densities
+res1 = coxph(Surv(comb$OSmonth, comb$censoring) ~ grade  , data =  comb)
+res2 = coxph(Surv(comb$OSmonth, comb$censoring) ~ grade + stromal_cluster_1 + stromal_cluster_2 + stromal_cluster_3 + stromal_cluster_4 + stromal_cluster_5 + stromal_cluster_6 + stromal_cluster_7 + stromal_cluster_8 + stromal_cluster_9 + stromal_cluster_10 + stromal_cluster_11 + stromal_cluster_12 + stromal_cluster_13 + stromal_cluster_14 + stromal_cluster_15 + stromal_cluster_16 + stromal_cluster_17 + stromal_cluster_18 + stromal_cluster_19 + stromal_cluster_20 + stromal_cluster_21 + stromal_cluster_22 + stromal_cluster_23 + stromal_cluster_24 + stromal_cluster_25 + stromal_cluster_26 + stromal_cluster_27 + stromal_cluster_28 + stromal_cluster_29 + stromal_cluster_30 + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8 + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17  +cluster_18  +cluster_19  +cluster_20  +cluster_21  +cluster_22  +cluster_23  , data =  comb)
+anova(res1,res2)
 
 
+#Clinical type and SCP patient groups
+comb = merge(comb,meta_patient_clustering,by = 'PID')
+res1 = coxph(Surv(comb$OSmonth, comb$censoring) ~ clinical_type  , data =  comb)
+res2 = coxph(Surv(comb$OSmonth, comb$censoring) ~ clinical_type + patient_pheno  , data =  comb)
+anova(res1,res2)
 
-#Single-cells
+#Clinical type, grade and SCP patient groups
+comb = merge(comb,meta_patient_clustering,by = 'PID')
+res1 = coxph(Surv(comb$OSmonth, comb$censoring) ~ clinical_type + grade  , data =  comb)
+res2 = coxph(Surv(comb$OSmonth, comb$censoring) ~ clinical_type + grade + patient_pheno  , data =  comb)
+anova(res1,res2)
 
-celltype_dat = merge(unique(Sample_metadata[,c('patientcode','OSmonth','Patientstatus')]),patient_wide_densities, by = 'patientcode')
-celltype_dat = celltype_dat[!is.na(celltype_dat$OSmonth),]
-colnames(celltype_dat)[-c(1:3)] = paste0('cluster_',colnames(celltype_dat)[-c(1:3)])
 
-#Change Unit so the values aren't all super small
-celltype_dat = cbind(celltype_dat[,c(1:3)],data.table(as.matrix(celltype_dat[,-c(1:3)]) * 10000000))
-
-#log transf
-bin = celltype_dat[,-c(1:3)]
-#bin[bin ==0] = 0.0000001
-bin[bin ==0] = 1
-bin= log(bin)
-celltype_dat = cbind(celltype_dat[,c(1:3)],bin)
-
-
-#Add metadata
-celltype_dat = merge(celltype_dat,unique(cluster_dat_tumors[,c('patientcode','grade','age','PTNM_T','PTNM_M','tumor_size','PTNM_N','histology','patient_pheno','clinical_type')]), by = 'patientcode')
-
-
-#Adjust censoring depending on whether you are interested in overal or disease free survival (here overal)
-celltype_dat$censoring[str_detect(celltype_dat$Patientstatus,'death by primary disease')] = 1
-celltype_dat$censoring[is.na(celltype_dat$censoring)] = 0
-
-
-# Compare any 2 nested models using likelihood ratio tests (add in or leave away different variables)
-celltype_dat$grade = factor(celltype_dat$grade,levels = 3:1)
-celltype_dat$clinical_type = factor(celltype_dat$clinical_type,levels = c('HR+HER2-','TripleNeg','HR+HER2+','HR-HER2+',''))
-res.cox1 <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ clinical_type + grade , data =  celltype_dat)
-res.cox2 <- coxph(Surv(celltype_dat$OSmonth, celltype_dat$censoring) ~ clinical_type + grade + cluster_1 + cluster_2  + cluster_3  + cluster_4 + cluster_5 + cluster_6 + cluster_7 + cluster_8  + cluster_9 + cluster_10  + cluster_11 + cluster_12 +cluster_13 +cluster_14 +cluster_15 +cluster_16 +cluster_17 +cluster_18 +cluster_19 +cluster_20 + cluster_21 + cluster_22 + cluster_23 + cluster_24 + cluster_25 + cluster_26 + cluster_27, data =  celltype_dat)
-summary(res.cox2)
-anova(res.cox1,res.cox2)
-
-CI = confint(res.cox2)
-df <- data.frame(x = names(res.cox2$coefficients),
-                 F = exp(res.cox2$coefficients),
-                 L = exp(CI[,1]),
-                 U = exp(CI[,2]))
-df = data.table(df)
-df = df[order(F),]
-df$x = factor(df$x, levels = df$x)
-df$sign[df$L < 1 & df$U < 1] = 1
-df$sign[df$L > 1 & df$U > 1] = 1
-df$sign[is.na(df$sign)] = 0
-df$sign = factor(df$sign)
-
-g = ggplot(df, aes(x = x, y = F, color = sign)) +
-  geom_point(size = 4) +
-  geom_errorbar(aes(ymax = U, ymin = L))+
-  scale_color_manual(values = c('light blue','red'))+
-  coord_flip()+ylim(0,20)+
-  geom_hline(yintercept = 1,color = 'blue')
-
-pdf('/home/jana/Desktop/R_dat/only_single_cell.pdf',width = 20, height = 10)
-g
-dev.off()
-
-```
-
-#Correlation stroma and epi comm
-```{r}
-s = surv_stroma[,-c('OSmonth','Patientstatus','censoring')]
-e = surv[,-c('OSmonth','Patientstatus','censoring')]
-
-s_mat = as.matrix(s[,-'patientcode'])
-rownames(s_mat) = s$patientcode
-
-e_mat = as.matrix(e[,-'patientcode'])
-rownames(e_mat) = e$patientcode
-
-s_mat = s_mat[rownames(s_mat)[rownames(s_mat) %in% rownames(e_mat)],]
-e_mat = e_mat[rownames(e_mat)[rownames(e_mat) %in% rownames(s_mat)],]
-
-s_mat = s_mat[,o_stroma]
-e_mat = e_mat[,o_epi]
-
-
-crosscor = cor(e_mat,s_mat)
-
-combcorr = cor(cbind(e_mat,s_mat))
-
-
-hr = hclust(dist(t(cbind(e_mat,s_mat))), method = "ward.D2")
-
-
-pdf('/home/jana/Desktop/R_dat/corr_stromal_epi_comm_patient_level.pdf',width = 20,height = 20)
-corrplot(cor(cbind(e_mat,s_mat)), method = "color",col=colorRampPalette(c("blue","white","red"))(200))#[,hr$labels[hr$order]]
-dev.off()
-```
-
-#Correlation on cell level ( how often do they share cells)
-```{r}
-
-epi = merge(unique(nodules_orig[,c('CellId','Community','core')]),nodules_wide[,c('core','Community','cluster')],by = c('core','Community'))
-names(epi)[names(epi) == 'Community'] = 'Epi_community'
-names(epi)[names(epi) == 'cluster'] = 'Epi_cluster'
-
-stroma = merge(unique(nodules_orig[,c('CellId','Community','core')]),nodules_wide[,c('core','Community','cluster')],by = c('core','Community'))
-names(stroma)[names(stroma) == 'Community'] = 'Stromal_community'
-names(stroma)[names(stroma) == 'cluster'] = 'Stromal_cluster'
-
-both = merge(epi,stroma, by = c('core','CellId'))
-both = unique(both[,-'CellId'])
-both[,n_both := .N , by = c('Epi_cluster','Stromal_cluster')]
-both[,frac_epi := n_both/.N , by = c('Epi_cluster')]
-both[,frac_stroma := n_both/.N , by = c('Stromal_cluster')]
-
-both$Stromal_cluster = factor(both$Stromal_cluster, levels = o_stroma) #order_stroma or o_stroma$Clustergram
-both$Epi_cluster = factor(both$Epi_cluster, levels = order_epi)#order_epi
-
-both = unique(both[,c('Epi_cluster','Stromal_cluster','n_both')])
-p4 <- ggplot(both,aes(y=factor(Epi_cluster),x=factor(Stromal_cluster)))+
-  geom_point(aes(colour = n_both, 
-                 size = n_both))  +   
-scale_color_gradient2(low = "blue",  
-                     mid = "white",
-                     high = "red",
-                     name = "Absolute shared number")+       
-scale_size(range = c(1, 15),name = "Absolute shared number") +
-  theme_dark()
-
-pdf('/home/jana/Desktop/R_dat/community_enrichment_abs_numbers.pdf',width = 20, height = 10)
-p4
-dev.off()
-
-
-```
-
-Distances to tumor-stroma boundary
-```{r}
-#Import SC distnace data exported from histoCAT (SC distnacens were extracted using regionprops in matlab)
-folder_csv_images <- '/home/ubuntu/tmp/Data/2019/Revisions_submission/Data_for_submission/SC_Distances.csv'
-
-# Load the data and get rid of cells for which the distance to mask couldn't be calculated (Inf) because no mask in that image
-cells <- fread(folder_csv_images, header = TRUE, check.names = TRUE)
-cells = cells[!cells$Distances == 'Inf',]
-
-# Adjust to uniform core naming as done previously for the data here in histoCAT2R_dataCleaning.R (because naming slighlty different in histoCAT than here in R pipeline due to metadata)
-test = unique(cells$core)
-split_core = strsplit(cells$core,'_', fixed = TRUE)
-cells$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
-#Replace the ones that don't need acquisition number again
-short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
-duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
-in_cores_index = unlist(lapply(unique(cells$core)[duplicate_idx],function(x){which(cells$core %in% x)}))
-cells$core[setdiff(1:length(cells$core),in_cores_index)] = unlist(lapply(strsplit(cells$core[setdiff(1:length(cells$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
-
-#Delete zeros from core names
-cells$core = unlist(lapply(cells$core,function(x){gsub("000","",x)}))
-
-#Assign StandardID (across entire data set) for every cell
-cells <- cells[, id := paste(.BY,collapse =  "_"), by=.(core,CellId)]
-
-
-
-#Add metacluster info
-dat_tumor_mask = merge(unique(cells[,c('core','CellId','Mask')]),stroma, by = c('core','CellId'))
-dat_tumor_mask[,n_in := .N, by = c('Stromal_cluster','Mask')]
-dat_tumor_mask = unique(dat_tumor_mask[,c('Mask','Stromal_cluster','n_in')])
-dat_tumor_mask[,sum_cluster := sum(n_in), by = Stromal_cluster]
-dat_tumor_mask[,frac_in := n_in/sum_cluster , by = Mask]
-in_tumor = dat_tumor_mask[Mask == 1,]
-in_tumor = unique(in_tumor[,c('Stromal_cluster','frac_in')])
-
-```
-
-
-#K for stromal communities
-```{r}
-nodules = fread('/home/jana/Desktop/R_dat/nodules_stromal_basel.csv',header = T)
-
-
-test = unique(nodules$core)
-split_core = strsplit(nodules$core,'_', fixed = TRUE)
-nodules$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
-#Replace the ones that don't need acquisition number again
-short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
-duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
-in_cores_index = unlist(lapply(unique(nodules$core)[duplicate_idx],function(x){which(nodules$core %in% x)}))
-nodules$core[setdiff(1:length(nodules$core),in_cores_index)] = unlist(lapply(strsplit(nodules$core[setdiff(1:length(nodules$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
-
-#Delete zeros from core names
-nodules$core = unlist(lapply(nodules$core,function(x){gsub("000","",x)}))
-
-# nodules = merge(nodules,unique(cells[,c('core','CellId','Mask')]),by = c('core','CellId'))
-# nodules = nodules[Mask ==0,]
-
-nodules[,size_comm := .N, by = c('Community','core')]
-#nodules = nodules[size_comm > 19,]
-nodules[,ncells := .N , by = c('Community','Pheno','core')]
-nodules[,perc_cluster := ncells/size_comm, by = c('core','Community')]
-save_size = unique(nodules[,c('core','Community','size_comm')])
-nodules_orig = nodules
-
-#Image mean
-nodules <- unique(nodules[,c("core","Pheno","ncells","Community")])
-nodules$Pheno = factor(nodules$Pheno, levels = sort(unique(nodules$Pheno)))
-
-#Make missing cells types 0
-nodules_wide = dcast.data.table(nodules,formula = 'Community + core ~ Pheno',value.var = 'ncells',fill = 0)
-
-# #Add size and normalize
-# nodules_wide = merge(nodules_wide,save_size,by = c('core','Community'))
-nodules_wide = cbind( nodules_wide[,c('Community','core')],apply(nodules_wide[,-c('Community','core')],2, function(x){(x-min(x))/(max(x)-min(x))}))
-
-save_clusterings = unique(Sample_metadata[,'patientcode'])
-for (i in seq(20,60,10)){
-  #PG for identifying different structures
-  rand_seed = 3
-  rpheno_out = cytofkit::Rphenograph(nodules_wide[,-c('Community','core')], k = i, seed = rand_seed,approx = T)
-  nodules_wide_cur = nodules_wide
-  nodules_wide_cur$cluster = rpheno_out$membership
-
-  nodules_wide_cur = merge(unique(Sample_metadata[,c('core','patientcode')]),nodules_wide_cur,by = 'core')
-  enrichment = unique(nodules_wide_cur[,c('cluster','patientcode','Community','core')])
-  enrichment[,both := .N, by = c('cluster','patientcode')]
-  enrichment[,frac_patient := both/.N, by = c('patientcode')]
-  enrichment = unique(enrichment[,c('patientcode','cluster','frac_patient')])
-  d = dcast.data.table(enrichment,formula = 'patientcode  ~ cluster',value.var = 'frac_patient',fill = 0)
-  d_mat = as.matrix(d[,-'patientcode'])
-  rownames(d_mat) = d$patientcode
-
-
-  hr = hclust(dist(d_mat), method = "ward.D2")
-  clusters = dendextend::cutree(hr, k = 11)
-
-  cnames = names(clusters)
-  neighb_clusters = data.table(cnames)
-  names(neighb_clusters) = 'patientcode'
-  neighb_clusters$cluster = unlist(clusters)
-  names(neighb_clusters)[2] = paste0('cluster_',as.character(i))
-  save_clusterings = merge(save_clusterings,neighb_clusters,by = 'patientcode')
-
-}
-
-cluster_20 = dcast.data.table(save_clusterings,'patientcode ~ cluster_20')
-cluster_20_mat = as.matrix(cluster_20[,2:ncol(cluster_20)])
-rownames(cluster_20_mat) = cluster_20$patientcode
-cluster_20_mat[!is.na(cluster_20_mat)] = 1
-cluster_20_mat[is.na(cluster_20_mat)] = 0
-
-cluster_30 = dcast.data.table(save_clusterings,'patientcode ~ cluster_30')
-cluster_30_mat = as.matrix(cluster_30[,2:ncol(cluster_30)])
-rownames(cluster_30_mat) = cluster_30$patientcode
-cluster_30_mat[!is.na(cluster_30_mat)] = 1
-cluster_30_mat[is.na(cluster_30_mat)] = 0
-
-cluster_40 = dcast.data.table(save_clusterings,'patientcode ~ cluster_40')
-cluster_40_mat = as.matrix(cluster_40[,2:ncol(cluster_40)])
-rownames(cluster_40_mat) = cluster_40$patientcode
-cluster_40_mat[!is.na(cluster_40_mat)] = 1
-cluster_40_mat[is.na(cluster_40_mat)] = 0
-
-cluster_50 = dcast.data.table(save_clusterings,'patientcode ~ cluster_50')
-cluster_50_mat = as.matrix(cluster_50[,2:ncol(cluster_50)])
-rownames(cluster_50_mat) = cluster_50$patientcode
-cluster_50_mat[!is.na(cluster_50_mat)] = 1
-cluster_50_mat[is.na(cluster_50_mat)] = 0
-
-cluster_60 = dcast.data.table(save_clusterings,'patientcode ~ cluster_60')
-cluster_60_mat = as.matrix(cluster_60[,2:ncol(cluster_60)])
-rownames(cluster_60_mat) = cluster_60$patientcode
-cluster_60_mat[!is.na(cluster_60_mat)] = 1
-cluster_60_mat[is.na(cluster_60_mat)] = 0
-
-cor20 = cor(t(cluster_20_mat))
-cor20[cor20 != 1] = 0
-cor30 = cor(t(cluster_30_mat))
-cor30[cor30 != 1] = 0
-cor40 = cor(t(cluster_40_mat))
-cor40[cor40 != 1] = 0
-cor50 = cor(t(cluster_50_mat))
-cor50[cor50 != 1] = 0
-cor60 = cor(t(cluster_60_mat))
-cor60[cor60 != 1] = 0
-
-
-co_occurance = (cor20+cor30+cor40+cor50+cor60)/5
-co_occurance = co_occurance[o_patients,]
-co_occurance = co_occurance[,o_patients]
-
-tab = rownames(co_occurance)
-tab = as.data.table(tab)
-names(tab) = 'patientcode'
-names(neighb_clusters_orig)[1] = 'patientcode'
-tab = merge(tab,neighb_clusters_orig,by = 'patientcode')
-tab = tab[order(match(patientcode,rownames(co_occurance)))]
-
-h = Heatmap(co_occurance, name = "co_occurance", km = 1, col = colorRamp2(c(0, 1), c("white", "red")),
-     show_row_names = F, show_column_names =  F,cluster_rows = F,cluster_columns = F)+
-
-Heatmap(factor(tab$cluster), name = "Patientgroups", show_row_names = FALSE, width = unit(10, "mm"), col = structure(col_vector, names = c(as.character(1:11))))
-
-pdf('/home/jana/Desktop/R_dat/test.pdf',width = 30 , height = 30)
-h
-dev.off()
-
-#Amount changing
-length(which((cor20 - cor30) %in% c(1,-1)))
-length(which((cor30 - cor40) %in% c(1,-1)))
-length(which((cor40 - cor50) %in% c(1,-1)))
-length(which((cor50 - cor60) %in% c(1,-1)))
-
-```
-
-```{r}
-#Boxplots stroma and SCP
-
-
-#Shannon entropy per patientcode
-dat_cut_tumors <- unique(cluster_dat_tumors[,c("patientcode","cluster","ncells")])
-
-#split into cores
-ind_cores <- split( dat_cut_tumors , f = dat_cut_tumors$patientcode )
-
-shannon_cores = lapply(ind_cores, function(x){entropy.ChaoShen(x$ncells)})
-
-shannon_core = data.table(unlist(names(shannon_cores)))
-names(shannon_core) = "patientcode"
-shannon_core$shannon = unlist(shannon_cores)
-
-#SCP
-
-sh = merge(shannon_core,meta_patient_clustering,by = 'patientcode')
-
-
-p <- ggplot(sh, aes(x=factor(patient_pheno), y=shannon)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("KL div to patietn average of core")+
-  xlab("Patientgroup")+
-  theme(panel.background = element_blank())+
-  ggtitle('Cores assigned to patient group')
-
-pdf('/home/jana/Desktop/R_dat/shannon_SCP_basel.pdf')
-p
-dev.off()
-
-#Stroma
-names(neighb_clusters_orig)[1] = 'patientcode'
-sh = merge(shannon_core,neighb_clusters_orig)
-
-
-p <- ggplot(sh, aes(x=factor(cluster), y=shannon)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("KL div to patietn average of core")+
-  xlab("Patientgroup")+
-  ylim(c(0,3))+
-  theme(panel.background = element_blank())+
-  ggtitle('Cores assigned to patient group')
-
-pdf('/home/jana/Desktop/R_dat/shannon_stromalComm_basel.pdf')
-p
-dev.off()
-```
-
-
-#Example images
-```{r}
-
-
-nodules_orig = merge(nodules_orig,unique(Sample_metadata[,c('core','patientcode')]),by = 'core')
-nodules_orig = merge(nodules_orig,unique(nodules_wide[,c('core','cluster','Community')]),by = c('core','Community'))
-
-
-cur = surv_stroma[cluster_19 == max(cluster_19),'patientcode']
-nodules_orig[patientcode == cur$patientcode,]
-c = nodules_orig[(core == 'BaselTMA_SP41_178_X4Y9' & cluster == 23),c('CellId','Community')]
-
-fwrite(c,'/home/jana/Desktop/R_dat/community_examples.csv',col.names = T)
-
-#Check grade 2 dangerous small nodules
-m = melt.data.table(comb,id.vars = c('patientcode','OSmonth','Patientstatus','censoring','clinical_type','grade'))
-m = m[value != 0,]
-pdf('/home/jana/Desktop/R_dat/grade.pdf',width = 50, height = 10)
-ggplot(m,aes(x = variable, y = value, fill = grade))+
-  geom_boxplot()
-dev.off()
 ```
