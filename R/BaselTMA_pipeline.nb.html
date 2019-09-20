@@ -2294,6 +2294,32 @@ cluster_pheno$cluster_new = NULL</code></pre>
 <p>Display PG/meta clusters on tSNE (Figure 1)</p>
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuXG5zZXRrZXkoZGF0LCBpZClcbnNldGtleSh0c25lLGlkKVxuc2V0a2V5KGNsdXN0ZXJfcGhlbm8saWQpXG5cbmNsdXN0ZXJfcGhlbm8kY2x1c3RlciA8LSBmYWN0b3IoY2x1c3Rlcl9waGVubyRjbHVzdGVyLCBsZXZlbHMgPSBjbHVzdGVyX29yZGVyX2Jhc2VsX21ldGEpXG5cbnAgPSBzdWJzZXQoZGF0LCAhZHVwbGljYXRlZChpZCkpW3RzbmVdW2NsdXN0ZXJfcGhlbm9dICU+JSBcbiAgZ2dwbG90KGFlcyh4PWJoX1YxLCB5PWJoX1YyKSkrXG4gIGdlb21fcG9pbnQoc2l6ZT0wLjMsIGFscGhhPTEsIGFlcyhjb2xvcj1jbHVzdGVyKSkrXG4gIGxhYnMoY29sb3VyPVwiQ2x1c3RlcnNcIikrXG4gIHNjYWxlX2NvbG9yX21hbnVhbCh2YWx1ZXMgPSBteWNvbHNfYmFzZWxfbWV0YVthcy5udW1lcmljKGNsdXN0ZXJfb3JkZXJfYmFzZWxfbWV0YSldKSsgXG4gIGdndGl0bGUoJ01ldGFjbHVzdGVycycpK1xuICBndWlkZXMoY29sb3I9Z3VpZGVfbGVnZW5kKG92ZXJyaWRlLmFlcz1saXN0KHNpemU9NSkpKStcbiAgdGhlbWUoc3RyaXAuYmFja2dyb3VuZCA9IGVsZW1lbnRfYmxhbmsoKSxcbiAgICAgICAgcGFuZWwuYmFja2dyb3VuZD1lbGVtZW50X3JlY3QoZmlsbD0nd2hpdGUnLCBjb2xvdXIgPSAnYmxhY2snKSxcbiAgICAgICAgcGFuZWwuZ3JpZC5tYWpvcj1lbGVtZW50X2JsYW5rKCksXG4gICAgICAgIHBhbmVsLmdyaWQubWlub3I9ZWxlbWVudF9ibGFuaygpLFxuICAgICAgICBwbG90LmJhY2tncm91bmQ9ZWxlbWVudF9ibGFuaygpLFxuICAgICAgICBsZWdlbmQua2V5ID0gZWxlbWVudF9ibGFuaygpKVxuXG5wZGYoZmlsZT1cInRzbmUucGRmXCIsIHdpZHRoPTEwLCBoZWlnaHQ9MTApXG5wXG5kZXYub2ZmKClcbmBgYCJ9 -->
+<pre class="r"><code>
+setkey(dat, id)
+setkey(tsne,id)
+setkey(cluster_pheno,id)
+
+cluster_pheno$cluster &lt;- factor(cluster_pheno$cluster, levels = cluster_order_basel_meta)
+
+p = subset(dat, !duplicated(id))[tsne][cluster_pheno] %&gt;% 
+  ggplot(aes(x=bh_V1, y=bh_V2))+
+  geom_point(size=0.3, alpha=1, aes(color=cluster))+
+  labs(colour=&quot;Clusters&quot;)+
+  scale_color_manual(values = mycols_basel_meta[as.numeric(cluster_order_basel_meta)])+ 
+  ggtitle(&#39;Metaclusters&#39;)+
+  guides(color=guide_legend(override.aes=list(size=5)))+
+  theme(strip.background = element_blank(),
+        panel.background=element_rect(fill=&#39;white&#39;, colour = &#39;black&#39;),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank(),
+        legend.key = element_blank())
+
+pdf(file=&quot;tsne.pdf&quot;, width=10, height=10)
+p
+dev.off()</code></pre>
+<!-- rnb-source-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
 <p>Plot heatmap of the metaclusters mean/median marker expressions</p>
@@ -2485,6 +2511,19 @@ patient_dat_vars&lt;-transform(patient_dat_vars, channel = as.character(channel)
 <p>Hierarchical clustering of patients (for visualization only: on stacked barplot bellow)</p>
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuIyBIaWVyYXJjaGljYWwgY2x1c3RlcmluZyBvZiBwYXRpZW50cyBiYXNlZCBvbiB0dW1vciBjZWxsdHlwZSBmcmFjdGlvbnNcbnBhdGllbnRfZGF0X3ZhcnMgPSBwYXRpZW50X2RhdF92YXJzW29yZGVyKFBJRCldXG5wYXRpZW50X3dpZGUgPSBkY2FzdC5kYXRhLnRhYmxlKGRhdGEgPXBhdGllbnRfZGF0X3ZhcnMsIGZvcm11bGEgPSAnUElEIH4gY2hhbm5lbCcsXG4gICAgICAgICAgICAgICAgICAgICAgICAgIHZhbHVlLnZhciA9ICd2YWx1ZScsZnVuLmFnZ3JlZ2F0ZSA9IG1lYW4sZmlsbCA9IDApXG5cbmRkIDwtIGRpc3Qoc2NhbGUocGF0aWVudF93aWRlWywyOm5jb2wocGF0aWVudF93aWRlKV0pLCBtZXRob2QgPSBcImV1Y2xpZGVhblwiKVxuaGMgPC0gaGNsdXN0KGRkLCBtZXRob2QgPSBcIndhcmQuRDJcIilcblxuXG4jV3JpdGUgb3V0IGZvciBTQ1AgcGF0aWVudCBzdWJncm91cCBtYXRjaGluZyB3aXRoIG90aGVyIGNvaG9ydCAob3RoZXIgcGlwZWxpbmUpXG5md3JpdGUocGF0aWVudF93aWRlLCdwYXRpZW50X3dpZGVfYmFzZWwuY3N2Jyxjb2wubmFtZXMgID0gVClcbmBgYCJ9 -->
+<pre class="r"><code># Hierarchical clustering of patients based on tumor celltype fractions
+patient_dat_vars = patient_dat_vars[order(PID)]
+patient_wide = dcast.data.table(data =patient_dat_vars, formula = &#39;PID ~ channel&#39;,
+                          value.var = &#39;value&#39;,fun.aggregate = mean,fill = 0)
+
+dd &lt;- dist(scale(patient_wide[,2:ncol(patient_wide)]), method = &quot;euclidean&quot;)
+hc &lt;- hclust(dd, method = &quot;ward.D2&quot;)
+
+
+#Write out for SCP patient subgroup matching with other cohort (other pipeline)
+fwrite(patient_wide,&#39;patient_wide_basel.csv&#39;,col.names  = T)</code></pre>
+<!-- rnb-source-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
 <p>Phenograph clustering of patients based on tumor celltype fractions</p>
@@ -2580,6 +2619,86 @@ patient_wide_densities = dcast.data.table(data =patient_dat_vars_densities, form
 <p>Hierarchically clustered stacked barplot of patients’ cell type metacluster densities and labels colored by SCP patient subgroup (Figure 3)</p>
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuI09uIHJhcmUgb2NjYXNpb25zIHdoZXJlIHRoZXJlIGFyZSBtb3JlIHRoYW4gb25lIGNvcmVzIHBlciBwYXRpZW50LCB0YWtlIG1lYW4gb2YgZGVuc2l0aWVzIHRvIGRpc3BsYXkgZm9yIHBhdGllbnRzXG5jbHVzdGVyX2RhdF90dW1vcnMkY2x1c3RlciA9IGZhY3RvcihjbHVzdGVyX2RhdF90dW1vcnMkY2x1c3RlciwgbGV2ZWxzID0gY2x1c3Rlcl9vcmRlcl9iYXNlbF9tZXRhKVxuY2x1c3Rlcl9kYXRfdHVtb3JzWywgcGVyY19jZWxsc19wYXRpZW50IDo9IG5jZWxscyoxMDAvc3VtKG5jZWxscyksIGJ5PVBJRF1cbmNsdXN0ZXJfZGF0X3R1bW9yc1ssIGFyZWFfY2VsbHNfcGF0aWVudCA6PSBtZWFuKGNsdXN0ZXJfYnlfYXJlYSksIGJ5PWMoJ1BJRCcsJ2NsdXN0ZXInKV1cbmNsdXN0ZXJfZGF0X3R1bW9ycyA9IGNsdXN0ZXJfZGF0X3R1bW9yc1tvcmRlcihQSUQpXVxuXG4jR3JhZGUgY29sb3JzIChpbiBjYXNlIGdyYWRlIHNob3VsZCBiZSB2aXN1YWxpemVkIGFzIHZlcnRpY2FsIGJhcilcbnBhdGllbnRfZ3JhZGVfb3JpZyA9IGNsdXN0ZXJfZGF0X3R1bW9yc1ssYygnUElEJywnZ3JhZGUnKV1cbnBhdGllbnRfZ3JhZGUgPSB1bmlxdWUocGF0aWVudF9ncmFkZV9vcmlnKVxucGF0aWVudF9ncmFkZSA9IHBhdGllbnRfZ3JhZGVbIWR1cGxpY2F0ZWQocGF0aWVudF9ncmFkZSRQSUQpLF1cbnBhdGllbnRfZ3JhZGVfYWxsID0gcGF0aWVudF9ncmFkZVtoYyRvcmRlcl1cbmdyYWRlX29yZGVyID0gcGF0aWVudF9ncmFkZV9hbGwkZ3JhZGVcblxuI1BhdGllbnQgY2x1c3RlciBjb2xvcnMgKGZvciBjb2xvcnMgb2YgcGF0aWVudCBuYW1lcylcbnBhdGllbnRfY2x1c3Rlcl9vcmlnID0gY2x1c3Rlcl9kYXRfdHVtb3JzWyxjKCdQSUQnLCdwYXRpZW50X3BoZW5vJyldXG5wYXRpZW50X2NsdXN0ZXIgPSB1bmlxdWUocGF0aWVudF9jbHVzdGVyX29yaWcpXG5wYXRpZW50X2NsdXN0ZXIgPSBwYXRpZW50X2NsdXN0ZXJbIWR1cGxpY2F0ZWQocGF0aWVudF9jbHVzdGVyJFBJRCksXVxucGF0aWVudF9jbHVzdGVyX2FsbCA9IHBhdGllbnRfY2x1c3RlcltoYyRvcmRlcl1cbmNsdXN0ZXJfb3JkZXIgPSBwYXRpZW50X2NsdXN0ZXJfYWxsJHBhdGllbnRfcGhlbm9cblxuI0NsaW5pY2FsIHR5cGUgY29sb3JzIChmb3IgY2xpbmljYWwgdHlwZSB2ZXJ0aWNhbCBiYXIpXG5wYXRpZW50X2NsaW5pY2FsX29yaWcgPSBjbHVzdGVyX2RhdF90dW1vcnNbLGMoJ1BJRCcsJ2NsaW5pY2FsX3R5cGUnKV1cbnBhdGllbnRfY2xpbmljYWwgPSB1bmlxdWUocGF0aWVudF9jbGluaWNhbF9vcmlnKVxucGF0aWVudF9jbGluaWNhbCA9IHBhdGllbnRfY2xpbmljYWxbIWR1cGxpY2F0ZWQocGF0aWVudF9jbGluaWNhbCRQSUQpLF1cbnBhdGllbnRfY2xpbmljYWxfYWxsID0gcGF0aWVudF9jbGluaWNhbFtoYyRvcmRlcl1cbnBhdGllbnRfY2xpbmljYWxfYWxsJGNsaW5pY2FsX3R5cGUgPSBmYWN0b3IocGF0aWVudF9jbGluaWNhbF9hbGwkY2xpbmljYWxfdHlwZSlcbnBhdGllbnRfY2xpbmljYWxfYWxsJGNsaW5pY2FsX3R5cGVbcGF0aWVudF9jbGluaWNhbF9hbGwkY2xpbmljYWxfdHlwZSA9PSBcIlwiXSA9IE5BXG5jbGluaWNhbF9vcmRlciA9IHBhdGllbnRfY2xpbmljYWxfYWxsJGNsaW5pY2FsX3R5cGVcblxuI1Bsb3Q6XG5cbiNTdGFja2VkIGJhciBwbG90IHdpdGggY2VsbCB0eXBlIGRlbnNpdHkgY29sb3JzIHBlciBwYXRpZW50IGFuZCBsYWJlbHMgY29sb3JlZCBieSBTQyBwYXRpZW50IGdyb3VwXG5jdXQgPSBjbHVzdGVyX2RhdF90dW1vcnNbLGMoJ1BJRCcsJ2NsdXN0ZXInLCdhcmVhX2NlbGxzX3BhdGllbnQnKV1cbmN1dCA9IHVuaXF1ZShjdXQpXG5wIDwtIGdncGxvdChjdXQsIGFlcyh4PVBJRCwgeT1hcmVhX2NlbGxzX3BhdGllbnQsIGZpbGw9YXMuZmFjdG9yKGNsdXN0ZXIpKSkgKyBcbiAgZ2VvbV9iYXIoc3RhdD0naWRlbnRpdHknLHNob3cubGVnZW5kID0gVFJVRSkrXG4gIHNjYWxlX2ZpbGxfbWFudWFsKFwiQ2x1c3RlcnNcIix2YWx1ZXMgPSAgbXljb2xzX2Jhc2VsX21ldGFbYXMubnVtZXJpYyhjbHVzdGVyX29yZGVyX2Jhc2VsX21ldGEpXSkrICNteWNvbHNfYmFzZWwgZm9yIHNtYWxsIGNsdXN0ZXJzXG4gIHNjYWxlX3hfZGlzY3JldGUobGltaXRzID0gcGF0aWVudF9jbHVzdGVyX2FsbCRQSUQpK1xuICBsYWJzKGZpbGwgPSBcIkNsdXN0ZXJzXCIpK1xuICBjb29yZF9mbGlwKCkrXG4gIHhsYWIoXCJQYXRpZW50XCIpK1xuICB5bGFiKFwiUGVyY2VudGFnZSBvZiBjbHVzdGVyIGNlbGxzIGluIHBhdGllbnRcIikrXG4gIHRoZW1lKHBhbmVsLmJhY2tncm91bmQgPSBlbGVtZW50X2JsYW5rKCksXG4gICAgICAgIGF4aXMudGV4dC55ID0gZWxlbWVudF90ZXh0KGNvbG91cj1teWNvbHNfcGF0aWVudFtjbHVzdGVyX29yZGVyXSkpK1xuICBnZ3RpdGxlKCdQYXRpZW50IGNvbXBvc2l0aW9uJylcblxuI0NsaW5pY2FsIHR5cGUgYmFyIChjYW4gYmUgZXhjaGFuZ2VkIGZvciBncmFkZSlcbnAzIDwtIGdncGxvdChwYXRpZW50X2NsaW5pY2FsX2FsbCwgYWVzKHg9MSx5PWMoMTpsZW5ndGgocGF0aWVudF9jbGluaWNhbF9hbGwkY2xpbmljYWxfdHlwZSkpKSkrXG4gICAgICBnZW9tX3RpbGUoYWVzKCBmaWxsPWNsaW5pY2FsX3R5cGUpKStcbiAgc2NhbGVfZmlsbF9tYW51YWwodmFsdWVzID0gbXljb2xzX2NsaW5pY2FsKStcbiAgICB0aGVtZShheGlzLnRpdGxlLng9ZWxlbWVudF9ibGFuaygpLFxuICAgICAgICAgIGF4aXMudGV4dC54PWVsZW1lbnRfYmxhbmsoKSxcbiAgICAgICAgICBheGlzLnRpY2tzLng9ZWxlbWVudF9ibGFuaygpLFxuICAgICAgICAgIGF4aXMudGl0bGUueT1lbGVtZW50X2JsYW5rKCksXG4gICAgICAgICAgYXhpcy50ZXh0Lnk9ZWxlbWVudF9ibGFuaygpLFxuICAgICAgICAgIGF4aXMudGlja3MueT1lbGVtZW50X2JsYW5rKCksXG4gICAgICAgICAgbGluZSA9IGVsZW1lbnRfYmxhbmsoKSxcbiAgICAgICAgICBsZWdlbmQucG9zaXRpb249XCJub25lXCIpXG5cbiNEZW5kcm9ncmFtIG9mIGhpZXJhcmNoaWNhbCBjbHVzdGVyaW5nXG5wMiA8LSBnZ2RlbmRybzo6Z2dkZW5kcm9ncmFtKGhjLCByb3RhdGUgPSBUUlVFLGxhYmVscyA9IFRSVUUsIHRoZW1lX2RlbmRybyA9IFRSVUUsIGxlYWZfbGFiZWxzID0gRkFMU0UpK1xuICB0aGVtZShheGlzLnRpdGxlLng9ZWxlbWVudF9ibGFuaygpLFxuICAgICAgICAgIGF4aXMudGV4dC54PWVsZW1lbnRfYmxhbmsoKSxcbiAgICAgICAgICBheGlzLnRpY2tzLng9ZWxlbWVudF9ibGFuaygpLFxuICAgICAgICAgIGF4aXMudGl0bGUueT1lbGVtZW50X2JsYW5rKCksXG4gICAgICAgICAgYXhpcy50ZXh0Lnk9ZWxlbWVudF9ibGFuaygpLFxuICAgICAgICAgIGF4aXMudGlja3MueT1lbGVtZW50X2JsYW5rKCkpXG5cbiNBbGlnbm1lbnQgaXMgZ29vZCBpbiBwZGYgdmVyc2lvbiBpZiBzaXplIGlzIGtlcHQgdGhlIHNhbWVcbnA0IDwtIGdnZHJhdygpICtcbiAgICAgZHJhd19wbG90KHAyICsgc2NhbGVfeV9yZXZlcnNlKCksIDAsIDAuMDAxLCAwLjQ3LCAwLjk5OCkgK1xuICAgICBkcmF3X3Bsb3QocCAsMC41LCAwLjAzNTUsIDAuNSwgMC45MjYpK1xuICAgICBkcmF3X3Bsb3QocDMsMC40NSwwLDAuMDUsMSlcblxucGRmKGZpbGU9XCJTQ1Bfc2JwLnBkZlwiLCB3aWR0aD0zMCwgaGVpZ2h0PTUwKVxucDRcbmRldi5vZmYoKVxuXG5gYGAifQ== -->
+<pre class="r"><code>#On rare occasions where there are more than one cores per patient, take mean of densities to display for patients
+cluster_dat_tumors$cluster = factor(cluster_dat_tumors$cluster, levels = cluster_order_basel_meta)
+cluster_dat_tumors[, perc_cells_patient := ncells*100/sum(ncells), by=PID]
+cluster_dat_tumors[, area_cells_patient := mean(cluster_by_area), by=c(&#39;PID&#39;,&#39;cluster&#39;)]
+cluster_dat_tumors = cluster_dat_tumors[order(PID)]
+
+#Grade colors (in case grade should be visualized as vertical bar)
+patient_grade_orig = cluster_dat_tumors[,c(&#39;PID&#39;,&#39;grade&#39;)]
+patient_grade = unique(patient_grade_orig)
+patient_grade = patient_grade[!duplicated(patient_grade$PID),]
+patient_grade_all = patient_grade[hc$order]
+grade_order = patient_grade_all$grade
+
+#Patient cluster colors (for colors of patient names)
+patient_cluster_orig = cluster_dat_tumors[,c(&#39;PID&#39;,&#39;patient_pheno&#39;)]
+patient_cluster = unique(patient_cluster_orig)
+patient_cluster = patient_cluster[!duplicated(patient_cluster$PID),]
+patient_cluster_all = patient_cluster[hc$order]
+cluster_order = patient_cluster_all$patient_pheno
+
+#Clinical type colors (for clinical type vertical bar)
+patient_clinical_orig = cluster_dat_tumors[,c(&#39;PID&#39;,&#39;clinical_type&#39;)]
+patient_clinical = unique(patient_clinical_orig)
+patient_clinical = patient_clinical[!duplicated(patient_clinical$PID),]
+patient_clinical_all = patient_clinical[hc$order]
+patient_clinical_all$clinical_type = factor(patient_clinical_all$clinical_type)
+patient_clinical_all$clinical_type[patient_clinical_all$clinical_type == &quot;&quot;] = NA
+clinical_order = patient_clinical_all$clinical_type
+
+#Plot:
+
+#Stacked bar plot with cell type density colors per patient and labels colored by SC patient group
+cut = cluster_dat_tumors[,c(&#39;PID&#39;,&#39;cluster&#39;,&#39;area_cells_patient&#39;)]
+cut = unique(cut)
+p &lt;- ggplot(cut, aes(x=PID, y=area_cells_patient, fill=as.factor(cluster))) + 
+  geom_bar(stat=&#39;identity&#39;,show.legend = TRUE)+
+  scale_fill_manual(&quot;Clusters&quot;,values =  mycols_basel_meta[as.numeric(cluster_order_basel_meta)])+ #mycols_basel for small clusters
+  scale_x_discrete(limits = patient_cluster_all$PID)+
+  labs(fill = &quot;Clusters&quot;)+
+  coord_flip()+
+  xlab(&quot;Patient&quot;)+
+  ylab(&quot;Percentage of cluster cells in patient&quot;)+
+  theme(panel.background = element_blank(),
+        axis.text.y = element_text(colour=mycols_patient[cluster_order]))+
+  ggtitle(&#39;Patient composition&#39;)
+
+#Clinical type bar (can be exchanged for grade)
+p3 &lt;- ggplot(patient_clinical_all, aes(x=1,y=c(1:length(patient_clinical_all$clinical_type))))+
+      geom_tile(aes( fill=clinical_type))+
+  scale_fill_manual(values = mycols_clinical)+
+    theme(axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          axis.title.y=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks.y=element_blank(),
+          line = element_blank(),
+          legend.position=&quot;none&quot;)
+
+#Dendrogram of hierarchical clustering
+p2 &lt;- ggdendro::ggdendrogram(hc, rotate = TRUE,labels = TRUE, theme_dendro = TRUE, leaf_labels = FALSE)+
+  theme(axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          axis.title.y=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks.y=element_blank())
+
+#Alignment is good in pdf version if size is kept the same
+p4 &lt;- ggdraw() +
+     draw_plot(p2 + scale_y_reverse(), 0, 0.001, 0.47, 0.998) +
+     draw_plot(p ,0.5, 0.0355, 0.5, 0.926)+
+     draw_plot(p3,0.45,0,0.05,1)
+
+pdf(file=&quot;SCP_sbp.pdf&quot;, width=30, height=50)
+p4
+dev.off()
+</code></pre>
+<!-- rnb-source-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
 <p>#Read in fragmentation score generated in Matlab script based on average tumor community sizes (to plot next to stacked bar plot)(Figure 3)</p>
@@ -2868,6 +2987,115 @@ image_grade = merge(image_wide,grade, by = &#39;core&#39;)
 <p>Correlationplot-Neighborhood Overlay heatmap for meta clusters across all images (Figure 2)</p>
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuIyAjSWYgbmVjZXNzYXJ5IGV4Y2x1ZGUgbm9ybWFsIHNhbXBsZXMsIG5vdCBleGNsdWRlZCBmb3Igb25lIG92ZXJhbGwgaGVhdG1hcFxuIyBpbWFnZV9ub25vcm1hbCA9IG1lcmdlKGltYWdlX3dpZGUsIFNhbXBsZV9tZXRhZGF0YSwgYnkgPSAnY29yZScpXG4jIGltYWdlX25vbm9ybWFsID0gaW1hZ2Vfbm9ub3JtYWxbIWltYWdlX25vbm9ybWFsJGRpc2Vhc2VzdGF0dXMgPT0gJ25vbi10dW1vcicsXVxuIyBpbWFnZV9ub25vcm1hbCA9IGltYWdlX25vbm9ybWFsWywxOm5jb2woaW1hZ2Vfd2lkZSldXG4jIHBhdGllbnRncnBzID0gbWVyZ2UoaW1hZ2Vfbm9ub3JtYWwsIGNsdXN0ZXJfZGF0X3R1bW9ycywgYnkgPSAnY29yZScpXG5cblxuI0NvcnJlbGF0aW9ucyBvZiBjZWxsIHR5cGUgbWV0YWNsdXN0ZXIgZGVuc2l0aWVzIGFjcm9zcyBhbGwgaW1hZ2VzXG5pbWFnZV93aWRlX2N1dCA8LWltYWdlX3dpZGVbLDI6bmNvbChpbWFnZV93aWRlKV1cbm8gPC0gb3JkZXIoYXMubnVtZXJpYyhjb2xuYW1lcyhpbWFnZV93aWRlX2N1dCkpKVxuaW1hZ2Vfd2lkZV9jdXQgPC1pbWFnZV93aWRlX2N1dFssbywgd2l0aCA9IEZBTFNFXVxubWF0IDwtIGFzLm1hdHJpeChpbWFnZV93aWRlX2N1dClcbm1hdFtpcy5uYShtYXQpXSA8LSAwXG5jb3JyZWxhdGlvbiA8LSBjb3IobWF0KVxuXG4jUmVndWxhciBjb3JycGxvdCBhY3Jvc3MgYWxsIGltYWdlc1xuY29ycnBsb3Q6OmNvcnJwbG90KGNvcnJlbGF0aW9uLCBtZXRob2QgPSBcImNpcmNsZVwiLGNvbD1jb2xvclJhbXBQYWxldHRlKGMoXCJibHVlXCIsXCJ3aGl0ZVwiLFwicmVkXCIpKSgyMDApKVxuXG5cbiNJbXBvcnQgbmVpZ2hib3Job29kIGFuYWx5c2lzIG91dHB1dCBmcm9tIGhpc3RvQ0FULiBUaGlzIHdhcyBzYXZlZCBvdXQgYnkgdGhlIGFkYXB0ZWQgbmVpZ2hib3Job29kIGFuYWx5c2lzIE1hdGxhYiBzY3JpcHRzLlxubmVpZ2hib3JfaGVhdG1hcCA9IHJlYWQuY3N2KFwiL2hvbWUvdWJ1bnR1L3RtcC9zZXJ2ZXJfaG9tZXMvamFuYWYvRGF0YS8yMDE5L0RhdGFfcHVibGljYXRpb24vQmFzZWxUTUEvbmVpZ2hib3Job29kX291dHB1dC9uZWlnaGJvcmhvb2RfaGVhdG1hcC5jc3ZcIixoZWFkZXIgPSBUKVxubnJfaW1hZ2VzID0gcmVhZC5jc3YoXCIvaG9tZS91YnVudHUvdG1wL3NlcnZlcl9ob21lcy9qYW5hZi9EYXRhLzIwMTkvRGF0YV9wdWJsaWNhdGlvbi9CYXNlbFRNQS9uZWlnaGJvcmhvb2Rfb3V0cHV0L25yX2ltYWdlcy5jc3ZcIixoZWFkZXIgPSBUKVxuY29sbmFtZXMobnJfaW1hZ2VzKSA8LSBjKFwiVmFyMVwiLFwiVmFyMlwiLFwidmFsdWVcIilcbm5yX2ltYWdlcyA8LSBucl9pbWFnZXNbb3JkZXIobnJfaW1hZ2VzJFZhcjIpLF1cbmNvbG5hbWVzKG5laWdoYm9yX2hlYXRtYXApIDwtIGMoMToyNylcbnJvd25hbWVzKG5laWdoYm9yX2hlYXRtYXApIDwtIGMoMToyNylcbm1lbHRlZC5kYXQgPC0gbWVsdCh0KGRhdGEubWF0cml4KG5laWdoYm9yX2hlYXRtYXApKSlcblxuI1JlZ3VsYXIgTmVpZ2hib3Job29kIGhlYXRtYXAgYXMgaW4gaGlzdG9DQVRcbnA8LWdncGxvdChkYXRhID0gbWVsdGVkLmRhdCwgYWVzKHg9VmFyMSwgeT1WYXIyLCBmaWxsPXZhbHVlKSkgKyBcbiAgZ2VvbV90aWxlKCkrXG4gIHNjYWxlX2ZpbGxfZ3JhZGllbnQyKGxvdyA9IFwiYmx1ZVwiLCBoaWdoID0gXCJyZWRcIiwgbWlkID0gXCJ3aGl0ZVwiLCBcbiAgIG1pZHBvaW50ID0gMCwgbGltaXQgPSBjKC0xLDEpLCBzcGFjZSA9IFwiTGFiXCIsIFxuICAgbmFtZT1cIlBlYXJzb25cXG5Db3JyZWxhdGlvblwiKSArXG4gICAgc2NhbGVfeV9yZXZlcnNlKCkrXG4gICAgdGhlbWUoYXhpcy50aXRsZS54PWVsZW1lbnRfYmxhbmsoKSxcbiAgICAgICAgICBheGlzLnRleHQueD1lbGVtZW50X2JsYW5rKCksXG4gICAgICAgICAgYXhpcy50aWNrcy54PWVsZW1lbnRfYmxhbmsoKSxcbiAgICAgICAgICBheGlzLnRpdGxlLnk9ZWxlbWVudF9ibGFuaygpLFxuICAgICAgICAgIGF4aXMudGV4dC55PWVsZW1lbnRfYmxhbmsoKSxcbiAgICAgICAgICBheGlzLnRpY2tzLnk9ZWxlbWVudF9ibGFuaygpLFxuICAgICAgICAgIGF4aXMubGluZSA9IGVsZW1lbnRfYmxhbmsoKSxcbiAgICAgICAgICBwYW5lbC5iYWNrZ3JvdW5kPWVsZW1lbnRfYmxhbmsoKSxcbiAgICAgIHBhbmVsLmJvcmRlcj1lbGVtZW50X2JsYW5rKCksXG4gICAgICBwYW5lbC5ncmlkLm1ham9yPWVsZW1lbnRfYmxhbmsoKSxcbiAgICAgIHBhbmVsLmdyaWQubWlub3I9ZWxlbWVudF9ibGFuaygpLFxuICAgICAgcGxvdC5iYWNrZ3JvdW5kPWVsZW1lbnRfYmxhbmsoKSxcbiAgICAgIGxlZ2VuZC5wb3NpdGlvbj1cIm5vbmVcIilcblxuXG4jVmVyc2lvbiB3aXRoIG5laWdoYm9yaG9vZCBvbiB0b3Agb2YgY29ycnBsb3QsIGluY2x1ZGluZyBjaXJjbGUgc2l6ZSBjb3JyZXNwb25kaW5nIHRvIG5yX2ltYWdlczpcblxuI0NoYW5nZSBsZXZlbHMgb2YgY29ycmVsYXRpb24gZm9yIG9yZGVyIGFjY29yZGluZyB0byBjZWxsdHlwZSBncm91cHNcbm1lbHRfY29yciA9IG1lbHQoY29ycmVsYXRpb24pXG5tZWx0X2NvcnIkVmFyMSA8LSBmYWN0b3IobWVsdF9jb3JyJFZhcjEsIGxldmVscyA9IHJldihjKDE6MjcpKSlcbm1lbHRfY29yciRWYXIyIDwtIGZhY3RvcihtZWx0X2NvcnIkVmFyMiwgbGV2ZWxzID1jKDE6MjcpKVxuXG4jQ2hhbmdlIGxldmVscyBvZiBuZWlnaGJvcmhvb2QgZm9yIG9yZGVyIGFjY29yZGluZyB0byBjZWxsdHlwZSBncm91cHNcbm1lbHRlZC5kYXRfbm90VHJhbnNwb3NlZCA8LSBtZWx0KGRhdGEubWF0cml4KG5laWdoYm9yX2hlYXRtYXApKVxubWVsdGVkLmRhdF9ub3RUcmFuc3Bvc2VkJFZhcjEgPC0gZmFjdG9yKG1lbHRlZC5kYXRfbm90VHJhbnNwb3NlZCRWYXIxLCBsZXZlbHMgPSByZXYoYygxOjI3KSkpXG5tZWx0ZWQuZGF0X25vdFRyYW5zcG9zZWQkVmFyMiA8LSBmYWN0b3IobWVsdGVkLmRhdF9ub3RUcmFuc3Bvc2VkJFZhcjIsIGxldmVscyA9IGMoMToyNykpXG5cbiNDaGFuZ2UgbGV2ZWxzIG9mIG5yIGltYWdlcyBmb3Igb3JkZXIgYWNjb3JkaW5nIHRvIGNlbGx0eXBlIGdyb3Vwc1xubnJfaW1hZ2VzJFZhcjEgPC0gZmFjdG9yKG5yX2ltYWdlcyRWYXIxLCBsZXZlbHMgPSByZXYoYygxOjI3KSkpXG5ucl9pbWFnZXMkVmFyMiA8LSBmYWN0b3IobnJfaW1hZ2VzJFZhcjIsIGxldmVscyA9IGMoMToyNykpXG5cblxuI1Jlb3JkZXJlZCBjb3JycGxvdCBzcXVhcmVzXG5wMyA8LWdncGxvdChtZWx0X2NvcnIsIGFlcyh5ID0gVmFyMSxcbiAgICAgICAgICAgeCA9IFZhcjIsIGZpbGw9dmFsdWUpKSArICAgICAgICBcbiAgICBnZW9tX3RpbGUoKSArICAgICAgICAgXG4gICAgc2NhbGVfZmlsbF9ncmFkaWVudDIobG93ID0gXCJibHVlXCIsIGhpZ2ggPSBcInJlZFwiLCBtaWQgPSBcIndoaXRlXCIsIFxuICAgICBtaWRwb2ludCA9IDAsIGxpbWl0ID0gYygtMSwxKSwgc3BhY2UgPSBcIkxhYlwiLCBcbiAgICAgbmFtZT1cIlBlYXJzb25cXG5Db3JyZWxhdGlvblwiKStcbiAgICAgIHRoZW1lKGxlZ2VuZC5wb3NpdGlvbj0nbm9uZScsXG4gICAgICAgICAgICBheGlzLnRleHQueD1lbGVtZW50X3RleHQoY29sb3IgPSBjKG15Y29sc19iYXNlbF9tZXRhW2MoMToyNyldKSksIFxuICAgICAgICAgICAgYXhpcy50ZXh0Lnk9ZWxlbWVudF90ZXh0KGNvbG9yID0gcmV2KCBjKG15Y29sc19iYXNlbF9tZXRhW2MoMToyNyldKSkpLFxuICAgICAgICAgICAgcGFuZWwuYmFja2dyb3VuZCA9IGVsZW1lbnRfcmVjdChmaWxsID0gXCJ0cmFuc3BhcmVudFwiKSwgXG4gICAgICAgICAgICBwbG90LmJhY2tncm91bmQgPSBlbGVtZW50X3JlY3QoZmlsbCA9IFwidHJhbnNwYXJlbnRcIiwgY29sb3IgPSBOQSksIFxuICAgICAgICAgICAgcGFuZWwuZ3JpZC5tYWpvciA9IGVsZW1lbnRfYmxhbmsoKSwgXG4gICAgICAgICAgICBwYW5lbC5ncmlkLm1pbm9yID0gZWxlbWVudF9ibGFuaygpKVxuICBcbiNSZW9yZGVyZWQgbmVpZ2hib3Job29kIGhlYXRtYXAgY2lyY2xlc1xucDQgPC0gZ2dwbG90KG1lbHRlZC5kYXRfbm90VHJhbnNwb3NlZCxhZXMoeT1WYXIxLHg9VmFyMikpK1xuICBnZW9tX3BvaW50KGFlcyhjb2xvdXIgPSBtZWx0ZWQuZGF0X25vdFRyYW5zcG9zZWQkdmFsdWUsIFxuICAgICAgICAgICAgICAgICBzaXplID1ucl9pbWFnZXMkdmFsdWUpKSAgKyAgIFxuc2NhbGVfY29sb3JfZ3JhZGllbnQyKGxvdyA9IFwiYmx1ZVwiLCAgXG4gICAgICAgICAgICAgICAgICAgICBtaWQgPSBcIndoaXRlXCIsXG4gICAgICAgICAgICAgICAgICAgICBoaWdoID0gXCJyZWRcIixcbiAgICAgICAgICAgICAgICAgICAgIG5hbWUgPSBcIk5laWdoYm9yaG9vZCBpbnRlcmFjdGlvbnNcIikrICAgICAgIFxuc2NhbGVfc2l6ZShyYW5nZSA9IGMoMSwgOCksbmFtZSA9IFwiTnVtYmVyIG9mIGltYWdlcyBjb250YWluaW5nIHNpZ24gaW50ZXJhY3Rpb25zXCIpICArXG4gICAgICAgIHRoZW1lKGF4aXMudGV4dC54PWVsZW1lbnRfdGV4dChjb2xvciA9IGMobXljb2xzX2Jhc2VsX21ldGFbYygxOjI3KV0pKSxcbiAgICAgICAgICAgIGF4aXMudGV4dC55PWVsZW1lbnRfdGV4dChjb2xvciA9IHJldihjKG15Y29sc19iYXNlbF9tZXRhW2MoMToyNyldKSkpLFxuICAgICAgICAgICAgcGFuZWwuYmFja2dyb3VuZCA9IGVsZW1lbnRfcmVjdChmaWxsID0gXCJ0cmFuc3BhcmVudFwiKSwgXG4gICAgICAgICAgICBwbG90LmJhY2tncm91bmQgPSBlbGVtZW50X3JlY3QoZmlsbCA9IFwidHJhbnNwYXJlbnRcIiwgY29sb3IgPSBOQSksIFxuICAgICAgICAgICAgcGFuZWwuZ3JpZC5tYWpvciA9IGVsZW1lbnRfYmxhbmsoKSwgXG4gICAgICAgICAgICBwYW5lbC5ncmlkLm1pbm9yID0gZWxlbWVudF9ibGFuaygpKVxuICBcbiNPdmVybGF5IHRoZSBjb3JycGxvdCBhbmQgbmVpZ2hib3Job29kIGhlYXRtYXAsIG92ZXJsYXkgaXMgcGVyZmVjdCBsaWtlIHRoaXMgd2hlbiBzaXplIG9mIHBkZiBzdGF5cyB0aGUgc2FtZVxucDUgPC0gZ2dkcmF3KCkgK1xuICAgZHJhd19wbG90KCBwMywgMCwgMCwgMC44Mjc1LCAxKSArXG4gICBkcmF3X3Bsb3QoIHA0LDAsIDAsIDEsIDEpK2dndGl0bGUoJ0FsbEltYWdlc19OZWlnaGJvcmhvb2RPdmVybGF5JylcbiAgXG5wZGYoJ292ZXJsYXlfbmVpZ2Jvcmhvb2QucGRmJyx3aWR0aCA9IDIwLCBoZWlnaHQgPSAxMClcbnA1XG5kZXYub2ZmKClcblxuXG5gYGAifQ== -->
+<pre class="r"><code># #If necessary exclude normal samples, not excluded for one overall heatmap
+# image_nonormal = merge(image_wide, Sample_metadata, by = &#39;core&#39;)
+# image_nonormal = image_nonormal[!image_nonormal$diseasestatus == &#39;non-tumor&#39;,]
+# image_nonormal = image_nonormal[,1:ncol(image_wide)]
+# patientgrps = merge(image_nonormal, cluster_dat_tumors, by = &#39;core&#39;)
+
+
+#Correlations of cell type metacluster densities across all images
+image_wide_cut &lt;-image_wide[,2:ncol(image_wide)]
+o &lt;- order(as.numeric(colnames(image_wide_cut)))
+image_wide_cut &lt;-image_wide_cut[,o, with = FALSE]
+mat &lt;- as.matrix(image_wide_cut)
+mat[is.na(mat)] &lt;- 0
+correlation &lt;- cor(mat)
+
+#Regular corrplot across all images
+corrplot::corrplot(correlation, method = &quot;circle&quot;,col=colorRampPalette(c(&quot;blue&quot;,&quot;white&quot;,&quot;red&quot;))(200))
+
+
+#Import neighborhood analysis output from histoCAT. This was saved out by the adapted neighborhood analysis Matlab scripts.
+neighbor_heatmap = read.csv(&quot;/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/neighborhood_output/neighborhood_heatmap.csv&quot;,header = T)
+nr_images = read.csv(&quot;/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/neighborhood_output/nr_images.csv&quot;,header = T)
+colnames(nr_images) &lt;- c(&quot;Var1&quot;,&quot;Var2&quot;,&quot;value&quot;)
+nr_images &lt;- nr_images[order(nr_images$Var2),]
+colnames(neighbor_heatmap) &lt;- c(1:27)
+rownames(neighbor_heatmap) &lt;- c(1:27)
+melted.dat &lt;- melt(t(data.matrix(neighbor_heatmap)))
+
+#Regular Neighborhood heatmap as in histoCAT
+p&lt;-ggplot(data = melted.dat, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()+
+  scale_fill_gradient2(low = &quot;blue&quot;, high = &quot;red&quot;, mid = &quot;white&quot;, 
+   midpoint = 0, limit = c(-1,1), space = &quot;Lab&quot;, 
+   name=&quot;Pearson\nCorrelation&quot;) +
+    scale_y_reverse()+
+    theme(axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          axis.title.y=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks.y=element_blank(),
+          axis.line = element_blank(),
+          panel.background=element_blank(),
+      panel.border=element_blank(),
+      panel.grid.major=element_blank(),
+      panel.grid.minor=element_blank(),
+      plot.background=element_blank(),
+      legend.position=&quot;none&quot;)
+
+
+#Version with neighborhood on top of corrplot, including circle size corresponding to nr_images:
+
+#Change levels of correlation for order according to celltype groups
+melt_corr = melt(correlation)
+melt_corr$Var1 &lt;- factor(melt_corr$Var1, levels = rev(c(1:27)))
+melt_corr$Var2 &lt;- factor(melt_corr$Var2, levels =c(1:27))
+
+#Change levels of neighborhood for order according to celltype groups
+melted.dat_notTransposed &lt;- melt(data.matrix(neighbor_heatmap))
+melted.dat_notTransposed$Var1 &lt;- factor(melted.dat_notTransposed$Var1, levels = rev(c(1:27)))
+melted.dat_notTransposed$Var2 &lt;- factor(melted.dat_notTransposed$Var2, levels = c(1:27))
+
+#Change levels of nr images for order according to celltype groups
+nr_images$Var1 &lt;- factor(nr_images$Var1, levels = rev(c(1:27)))
+nr_images$Var2 &lt;- factor(nr_images$Var2, levels = c(1:27))
+
+
+#Reordered corrplot squares
+p3 &lt;-ggplot(melt_corr, aes(y = Var1,
+           x = Var2, fill=value)) +        
+    geom_tile() +         
+    scale_fill_gradient2(low = &quot;blue&quot;, high = &quot;red&quot;, mid = &quot;white&quot;, 
+     midpoint = 0, limit = c(-1,1), space = &quot;Lab&quot;, 
+     name=&quot;Pearson\nCorrelation&quot;)+
+      theme(legend.position=&#39;none&#39;,
+            axis.text.x=element_text(color = c(mycols_basel_meta[c(1:27)])), 
+            axis.text.y=element_text(color = rev( c(mycols_basel_meta[c(1:27)]))),
+            panel.background = element_rect(fill = &quot;transparent&quot;), 
+            plot.background = element_rect(fill = &quot;transparent&quot;, color = NA), 
+            panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank())
+  
+#Reordered neighborhood heatmap circles
+p4 &lt;- ggplot(melted.dat_notTransposed,aes(y=Var1,x=Var2))+
+  geom_point(aes(colour = melted.dat_notTransposed$value, 
+                 size =nr_images$value))  +   
+scale_color_gradient2(low = &quot;blue&quot;,  
+                     mid = &quot;white&quot;,
+                     high = &quot;red&quot;,
+                     name = &quot;Neighborhood interactions&quot;)+       
+scale_size(range = c(1, 8),name = &quot;Number of images containing sign interactions&quot;)  +
+        theme(axis.text.x=element_text(color = c(mycols_basel_meta[c(1:27)])),
+            axis.text.y=element_text(color = rev(c(mycols_basel_meta[c(1:27)]))),
+            panel.background = element_rect(fill = &quot;transparent&quot;), 
+            plot.background = element_rect(fill = &quot;transparent&quot;, color = NA), 
+            panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank())
+  
+#Overlay the corrplot and neighborhood heatmap, overlay is perfect like this when size of pdf stays the same
+p5 &lt;- ggdraw() +
+   draw_plot( p3, 0, 0, 0.8275, 1) +
+   draw_plot( p4,0, 0, 1, 1)+ggtitle(&#39;AllImages_NeighborhoodOverlay&#39;)
+  
+pdf(&#39;overlay_neigborhood.pdf&#39;,width = 20, height = 10)
+p5
+dev.off()
+</code></pre>
+<!-- rnb-source-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
 <p>Fisher’s exact test to identify enrichments between SCP/Grade/Clinical patient groups</p>
