@@ -301,6 +301,8 @@ censor_val = 0.99
 dat[, c_counts := bbRtools::censor_dat(mc_counts,censor_val), by=channel]
 #dat[, sc_counts := scale(mc_counts,censor_val), by=channel]
 
+setkey(dat,id)
+
 #prepare data
 cluster_pheno$cluster <- factor(cluster_pheno$cluster) 
 summary_dat = dat[cluster_pheno][ channel %in% good_channels ,list(

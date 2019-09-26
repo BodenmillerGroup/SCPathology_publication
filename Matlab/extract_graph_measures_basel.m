@@ -3,7 +3,7 @@ gates = retr('gates');
 sessionData = retr('sessionData');
 
 
-idx = find(contains(gates(:,1),'178_X4Y9'));%_X16Y7_130 %_X11Y6_78 %_X11Y1_6
+idx = find(contains(gates(:,1),'363_X14Y5'));%_X16Y7_130 %_X11Y6_78 %_X11Y1_6
 image_num = idx
 
 %Fragmentation score & communities, tumor cells only
@@ -26,8 +26,8 @@ for image_num = 1:381
     
     Neighbor_Matrix = sessionData(gates{selectedall_gates,2},[neigb_index{1}]);
     
-     PG_idx = 74; %For tumor only
-    %PG_idx = 75; %For stromal - tumor 100
+    %PG_idx = 74; %For tumor only
+    PG_idx = 75; %For stromal - tumor 100
     Phenograph_Vector_orig = sessionData(gates{selectedall_gates,2},PG_idx);
     Phenograph_Vector = Phenograph_Vector_orig; %For stromal - tumor 100
     
@@ -35,15 +35,15 @@ for image_num = 1:381
     curIDs = sessionData(gates{selectedall_gates,2},2);
     
     %Only tumor cell types
-    idx_tumor_pheno = ismember(Phenograph_Vector_orig, 14:27);
-    
-    curIDs_tumor = curIDs(idx_tumor_pheno);
-    
-    Phenograph_Vector = Phenograph_Vector_orig(idx_tumor_pheno);
-    Neighbor_Matrix = Neighbor_Matrix(idx_tumor_pheno,:);
-    Neighbor_Matrix(~ismember(Neighbor_Matrix,curIDs_tumor)) = 0;
-    
-    rows = rows(idx_tumor_pheno);
+%     idx_tumor_pheno = ismember(Phenograph_Vector_orig, 14:27);
+%     
+%     curIDs_tumor = curIDs(idx_tumor_pheno);
+%     
+%     Phenograph_Vector = Phenograph_Vector_orig(idx_tumor_pheno);
+%     Neighbor_Matrix = Neighbor_Matrix(idx_tumor_pheno,:);
+%     Neighbor_Matrix(~ismember(Neighbor_Matrix,curIDs_tumor)) = 0;
+%     
+%     rows = rows(idx_tumor_pheno);
 
     S = sparse(repmat(rows,1,size(Neighbor_Matrix,2)),(Neighbor_Matrix+1),1);
     fs = full(S);
@@ -61,7 +61,7 @@ for image_num = 1:381
     idx_gates = selectedall_gates;
     global Mask_all
     mask = Mask_all(idx_gates).Image;
-    mask(~ismember(mask,curIDs_tumor)) = 0; %curIDs_tumor
+    %mask(~ismember(mask,curIDs_tumor)) = 0; %curIDs_tumor
     
 
     if ~isempty(mask)
@@ -177,7 +177,7 @@ end
 llim = max([ceil(length(labels)./1e4) 1]);	
     	
 unLabel = unique(labels);	
-larger = arrayfun(@(x) length(find(labels == x)) > 1,unLabel);
+larger = arrayfun(@(x) length(find(labels == x)) > 10,unLabel);
 labels_use = unLabel(larger);
 
 %for each community highlight it on graph, calc clustering coeff and	
@@ -196,13 +196,11 @@ for c=1:length(labels_use)
             
     hold on;
 
-    %     gplot(tempS,centroids,'-*');
-    %     set(gca,'Ydir','reverse');	
-
-        [acc, ~ ] = avgClusteringCoefficient(tempS);	
-        ClusteringCoeff_perCommunity{c} = repmat(acc,sum(currlab),1);	
-        currPheno{c} = Phenograph_Vector(currlab);	
-        comm{c} = repmat(labels_use(c),sum(currlab),1);
+%%Uncomment to write out not only plotting
+%         [acc, ~ ] = avgClusteringCoefficient(tempS);	
+%         ClusteringCoeff_perCommunity{c} = repmat(acc,sum(currlab),1);	
+%         currPheno{c} = Phenograph_Vector(currlab);	
+%         comm{c} = repmat(labels_use(c),sum(currlab),1);
 
 end
 
@@ -253,6 +251,6 @@ end
 
 
 
-export_fig('filename.pdf','-transparent','-dpdf')
+export_fig('/home/jana/Desktop/R_dat/filename.pdf','-transparent','-dpdf')
     
     

@@ -261,9 +261,9 @@ cluster_match$Basel[cluster_match$zuri == 8] = 21 #This cluster forms tumor bulk
 cluster_match$Basel[cluster_match$zuri == 9] = 19 #different tumor cluster matched better based on relevant markers
 cluster_match$Basel[cluster_match$zuri == 26] = 15 #different tumor cluster matched better based on relevant markers
 cluster_match$Basel[cluster_match$zuri == 15] = 16 #this has tumor markers
-# cluster_match$Basel[cluster_match$zuri == 41] = 10
-# cluster_match$Basel[cluster_match$zuri == 39] = 8 
-# cluster_match$Basel[cluster_match$zuri == 3] = 8
+cluster_match$Basel[cluster_match$zuri == 41] = 10
+cluster_match$Basel[cluster_match$zuri == 39] = 8 
+cluster_match$Basel[cluster_match$zuri == 3] = 8
 cluster_match$Basel[cluster_match$zuri == 1] = 3
 
 #Plot publication version
@@ -408,9 +408,25 @@ dat_cluster_caseID[, id:=paste(cluster, core)]
 setkey(dat_cluster_caseID, 'id')
 
 #Remove duplicates
-cluster_dat = subset(dat_cluster_caseID, !duplicated(id))
+cluster_dat_incl_stroma = subset(dat_cluster_caseID, !duplicated(id))
 
-#Exclude stroma
+#Version including stroma
+#Get fractions/percentages of cells by core/cluster
+cluster_dat_incl_stroma[, frac_cluster := ncells/sum(ncells), by=core]
+cluster_dat_incl_stroma[, frac_cells := ncells/sum(ncells), by=cluster]
+cluster_dat_incl_stroma[, perc_cluster := ncells*100/sum(ncells), by=core]
+cluster_dat_incl_stroma[, perc_cells := ncells*100/sum(ncells), by=cluster]
+
+#Merge with metadata
+cluster_dat_incl_stroma = merge(cluster_dat_incl_stroma, Sample_metadata[!is.na(Sample_metadata$area),], by = c('core'), all.x = TRUE, allow.cartesian=TRUE, rm.NA = TRUE)
+
+#Calculate cell type densities per image
+cluster_dat_incl_stroma[,cell_density := ncells/area, by = 'core']
+
+
+#Version without stroma
+#Exclude stromal cells
+cluster_dat = subset(dat_cluster_caseID, !duplicated(id))
 cluster_dat = cluster_dat[!cluster %in% c(1:3,5,7,16,18,21,28,39,41),]
 
 #Get fractions/percentages of cells by core/cluster
@@ -429,15 +445,21 @@ cluster_dat[,cell_density := ncells/area, by = 'core']
 
 #Kick out normal, met and control in case not wanted for subsequent analyses, use metacluster labels from Basel
 ```{r}
+#Including stroma
+cluster_dat_tumors_stroma <- cluster_dat_incl_stroma[!is.na(cluster_dat_incl_stroma$PID),]
+cluster_dat_tumors_stroma <- cluster_dat_tumors_stroma[!cluster_dat_tumors_stroma$location == '[]',]
+
+#Map metacluster labels (machted from Basel cohort) because from now on only using metacluster cell types 
+cluster_dat_tumors_stroma$cluster <- mapvalues(cluster_dat_tumors_stroma$cluster, from=cluster_match$zuri, to=cluster_match$Basel)
+
+
+#Without stromal cells
 cluster_dat_tumors <- cluster_dat[!is.na(cluster_dat$PID),]
 cluster_dat_tumors <- cluster_dat_tumors[!cluster_dat_tumors$location == '[]',]
-cluster_dat_tumors <- cluster_dat_tumors[!cluster_dat_tumors$location == "METASTASIS",]
 
-#Use matched metacluster labels as cell types (so it is comparable to Basel TMA)
-cluster_dat_tumors$cluster <- mapvalues(cluster_dat_tumors$cluster, from=cluster_match$zuri, to=cluster_match$Basel)
-
-#If only interested in center cores
-#cluster_dat_tumors <- cluster_dat_tumors[cluster_dat_tumors$location == "CENTER",]
+#Map metacluster labels (machted from Basel cohort) because from now on only using metacluster cell types 
+cluster_dat_tumors_orig = cluster_dat_tumors
+cluster_dat_tumors$cluster <- mapvalues(cluster_dat_tumors$cluster, from=cluster_match$zuri, to=cluster_match$Basel
 
 ```
 
@@ -462,7 +484,7 @@ cluster_dat = cluster_dat[cluster_dat$PID %in% cluster_dat_tumors$PID,]
 #Distribution of cell types across center and periphery cores
 ```{r}
 cluster_loc = cluster_dat[,c('cluster','core','ncells','location')]
-cluster_loc = cluster_loc[!location %in% c('NORMAL','METASTASIS'),]
+cluster_loc = cluster_loc[!location %in% c('NORMAL'),]
 cluster_loc[,count := .N, by = c('cluster','location')]
 cluster_loc[,frac_cluster := count/.N, by = 'cluster']
 cluster_loc[,frac_location := count/.N, by = 'location']
@@ -484,7 +506,7 @@ p
 dev.off()
 ```
 
-#Patient clustering
+#Patient clustering use tumor cells only
 ```{r}
 # Prepare for patient clustering based on fraction of contained cell type metacluster cells
 cluster_dat_tumors <- subset(cluster_dat_tumors, by="PID")
@@ -500,13 +522,10 @@ cluster_dat_tumors[, frac_cells_cell_Area_image := ncells/tot_cell_area_image, b
 cluster_dat_tumors[, tot_cell_area_location := sum(unique(sum_area_cells)), by=location]
 cluster_dat_tumors[, tot_image_area_location := sum(unique(area)), by=location]
 cluster_dat_tumors[, cluster_by_area := ncells/area, by=c('core','cluster')]
+# order_orig = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/order_orig.csv')
+# cluster_dat_tumors = cluster_dat_tumors[order(match(core,order_orig$V1))]
+# cluster_dat_tumors$PID = as.character(cluster_dat_tumors$PID)
 
-#cluster_dat_tumors = cluster_dat_tumors[cluster_dat_tumors$cluster %in% c(1:11,21:22),]
-
-patient_dat_vars <- unique(cluster_dat_tumors)
-#check that sum adds up to 100% or 1 if fraction:
-patient_dat_vars <- patient_dat_vars[,sum := sum(frac_cluster),by = .(core)]
-patient_dat_vars <- patient_dat_vars[,sum := sum(frac_cells_amount_cells_patient),by = .(PID)]
 patient_dat_vars <- cluster_dat_tumors[,c("PID","cluster","frac_cluster")] #replace frac with other norms
 un_clusters <- unique(patient_dat_vars[,"cluster"])
 un_clusters <- transform(un_clusters, cluster = as.character(cluster))
@@ -518,13 +537,14 @@ patient_dat_vars<-transform(patient_dat_vars, channel = as.character(channel))
 patient_dat_vars = patient_dat_vars[order(PID)]
 patient_wide = dcast.data.table(data =patient_dat_vars, formula = 'PID ~ channel',
                           value.var = 'value',fun.aggregate = mean,fill = 0)
+patient_wide$PID = as.character(patient_wide$PID)
 
 dd <- dist(scale(patient_wide[,2:ncol(patient_wide)]), method = "euclidean")
 hc <- hclust(dd, method = "ward.D2")
 
 ```
 
-#Image clustering
+#Image clustering use tumor cells only
 ```{r}
 # Run hierclust on image's celltype fraction
 image_dat_vars <- unique(cluster_dat_tumors) #cluster_dat for all images
@@ -534,18 +554,26 @@ un_clusters_im <- unique(image_dat_vars$cluster)
 colnames(image_dat_vars)<-c("core","channel","value")
 image_wide = dcast.data.table(data =image_dat_vars, formula = 'core ~ channel',
                           value.var = 'value',fun.aggregate = mean, fill = 0)
-image_grade = merge(image_wide,grade, by = 'core')
 
 dd_image <- dist(scale(image_wide[,2:ncol(image_wide)]), method = "euclidean")
 hc_image <- hclust(dd_image, method = "ward.D2")
 
+#With original clusters for comparison
+image_dat_vars <- unique(cluster_dat_tumors_orig) #cluster_dat for all images
+grade <- unique(image_dat_vars[,c('core','grade')])
+image_dat_vars <- image_dat_vars[,c("core","cluster","frac_cluster")]
+un_clusters_im <- unique(image_dat_vars$cluster)
+colnames(image_dat_vars)<-c("core","channel","value")
+image_wide_orig = dcast.data.table(data =image_dat_vars, formula = 'core ~ channel',
+                          value.var = 'value',fun.aggregate = mean, fill = 0)
+
 ```
 
-#Asign individual images from Zurich TMA to most similar SCP patient group from Basel TMA
+#Asign individual images from Zurich TMA to most similar SCP patient group from Basel TMA based on tumor cell type proportions
 ```{r}
 #Read in patient cell type composition from Basel TMA
 basel_patients = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/output_BaselTMA/patient_wide_basel.csv',header = T)
-meta_patient_clustering = fread(file='/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/output_BaselTMA/patient_groups_tumors_meta.csv', header = TRUE)
+meta_patient_clustering = fread(file='/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/output_BaselTMA/SCP_patientgroups.csv', header = TRUE)
 
 #Aggregate into mean cell type composition per SCP patient group
 basel = merge(basel_patients,meta_patient_clustering, by = 'PID',all.x = T)
@@ -559,9 +587,14 @@ rnames = group_means_t$patient_pheno
 basel_mat = as.matrix(group_means_t[,-'patient_pheno'])
 rownames(basel_mat) = rnames
 
-rnames = image_wide$core
-zuri_mat = as.matrix(image_wide[,-'core'])
+#Sum over original clusters to get metacluster measurement per image
+rnames = image_wide_orig$core
+colnames(image_wide_orig) <- mapvalues(colnames(image_wide_orig), from=cluster_match$zuri, to=cluster_match$Basel)
+zuri_images_sum = data.table(t(rowsum(t(image_wide_orig[,-'core']), group = colnames(image_wide_orig[,-'core']), na.rm = T)))
+zuri_images_sum$core = rnames
+zuri_mat = as.matrix(zuri_images_sum[,-'core'])
 rownames(zuri_mat) = rnames
+zuri_mat = zuri_mat[,colnames(basel_mat)]
 
 basel_mat = basel_mat[order(as.numeric(rownames(basel_mat))), ] 
 
@@ -638,19 +671,92 @@ dev.off()
 
 ```
 
-#Patients clustering with stacked barplot of individual images, tumor images only, grouped by patient
+#Compute KL divergence between tumor cell type distributions of the individual core and the patient average 
 ```{r}
-#If this should include stromal and immune cells don't exclude them above
-cluster_dat_tumors = cluster_dat_tumors[!location %in% c("NORMAL","METASTASIS"),]
-#cluster_dat_ordered_by_patient = cluster_dat_tumors[by=PID]
+#KL divergence per patient
+
+#Tumors mean
+dat_cut_tumors <- cluster_dat_tumors[,c("core","cluster","perc_cluster","PID")]
+
+#Set absent cells types to 0
+dat_cut_tumors_wide = dcast.data.table(dat_cut_tumors,formula = 'PID + core ~ cluster',value.var = 'perc_cluster',fill = 0)
+dat_cut_tumors_long = melt.data.table(dat_cut_tumors_wide, id.vars = c('PID','core') ,variable.name = 'cluster', value.name = 'perc_cluster')
+
+#Split into patients
+ind_patients <- split( dat_cut_tumors_long , f = dat_cut_tumors_long$PID )
+all_patient = lapply(ind_patients, function(x){x[order(x$core),]})
+all_patient_tumors = lapply(all_patient,function(x){x[, patient_mean := mean(perc_cluster), by=cluster]})
+ind_cores_tumors <- lapply(all_patient_tumors, function(x){split( x , f = x$core )})
+
+#Calculate KL divergence
+kldiv <- lapply(ind_cores_tumors, function(x){lapply(x,function(y){entropy::KL.plugin(y$perc_cluster, na.omit(y$patient_mean))})})
+sum_kldiv <- lapply(kldiv,function(x){Reduce("+",x)})
+length_kldiv <- lapply(kldiv,function(x){length(x)})
+mean_kldiv_mat_tumors <- unlist(t(sum_kldiv))/unlist(t(length_kldiv))
+sum_kldiv_mat_tumors <- unlist(t(sum_kldiv))
+
+```
+
+#Compute shannon entropy of each core
+```{r}
+#Shannon entropy per core
+
+#Split into cores
+dat_cut_tumors <- unique(cluster_dat_tumors[,c("core","cluster","ncells")])
+ind_cores <- split( dat_cut_tumors , f = dat_cut_tumors$core )
+
+shannon_cores = lapply(ind_cores, function(x){entropy::entropy.ChaoShen(x$ncells)})
+shannon_core = data.table(unlist(names(shannon_cores)))
+names(shannon_core) = "core"
+shannon_core$shannon = unlist(shannon_cores)
+
+```
+
+#Boxplot of average KL divergence to patient mean for cores assigned to each SCP patientgroup
+```{r}
+
+#SCP Patientgroup
+kldiv_ordered = data.table(names(unlist(kldiv)))
+kldiv_ordered$kldiv = as.vector(unlist(kldiv))
+names(kldiv_ordered)[1] = 'core'
+kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[2],collapse = '.')}))
+kldiv_ordered = merge(kldiv_ordered,SCP_match, by = 'core')
+
+p <- ggplot(kldiv_ordered, aes(x=factor(patient_pheno), y=kldiv)) + 
+  geom_boxplot()+
+  geom_point(size=2, alpha=1)+
+  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
+  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
+  ylab("KL div to patietn average of core")+
+  xlab("Patientgroup")+
+  theme(panel.background = element_blank())+
+  ggtitle('Cores assigned to patient group')
+
+pdf('/home/jana/Desktop/R_dat/CoreKLdiv_to_patientMean_perAssignedPatientgroup.pdf')
+p
+dev.off()
+
+```
+
+#Patients clustering with stacked barplot of individual images, tumor images only, grouped by patient (use data including stroma for visualization)
+```{r}
+#Prepare
+cluster_dat_tumors_stroma = cluster_dat_tumors_stroma[!location %in% c("NORMAL","METASTASIS"),]
+cluster_dat_ordered_by_patient = cluster_dat_tumors_stroma[by=PID]
 image_order = cluster_dat_ordered_by_patient[,c('PID','core')]
 image_order = unique(image_order)
 un_patients = unique(image_order$PID)
 un_patients = un_patients[order(un_patients)]
 o <- hc$order
+#If using a new automatic clustering order
 all_order = image_order[order(match(image_order$PID,un_patients[o]))]
 
-#cluster_dat_ordered_by_patient$cluster = factor(cluster_dat_ordered_by_patient$cluster, levels = rev(levels(cluster_dat_ordered_by_patient$cluster))) #for figure reverse 
+#Read in original ordering of stacked bar plot to reproduce exact order as in Figure. The automatic ordering is not identical because some trees flipped due to different internal order of the data due to changed patient naming.
+all_order = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/all_order.csv')
+colnames(all_order) = c('PID','core')
+
+#Plot stacked barplot
+cluster_dat_ordered_by_patient$cluster = factor(cluster_dat_ordered_by_patient$cluster, levels = rev(levels(cluster_dat_ordered_by_patient$cluster)))
 p <- ggplot(cluster_dat_ordered_by_patient, aes(x=core, y=cell_density,  fill=cluster)) + 
   geom_bar(stat='identity')+
   scale_fill_manual("Clusters",values = mycols_basel_meta[as.numeric(levels(cluster_dat_ordered_by_patient$cluster))])+
@@ -664,19 +770,20 @@ p <- ggplot(cluster_dat_ordered_by_patient, aes(x=core, y=cell_density,  fill=cl
     axis.text.y = element_text(colour=c(col_vector,"#7FC97F",'black')[as.factor(all_order$PID)]))+
   ggtitle('Patient composition')
 
-p2 <- ggdendro::ggdendrogram(hc, rotate = TRUE,labels = FALSE, theme_dendro = TRUE, leaf_labels = FALSE)+
-  theme(axis.title.x=element_blank(),
-          axis.text.x=element_blank(),
-          axis.ticks.x=element_blank(),
-          axis.title.y=element_blank(),
-          axis.text.y=element_blank(),
-          axis.ticks.y=element_blank())
+#If automatically clustsered plot dendrogram
+# p2 <- ggdendro::ggdendrogram(hc, rotate = TRUE,labels = FALSE, theme_dendro = TRUE, leaf_labels = FALSE)+
+#   theme(axis.title.x=element_blank(),
+#           axis.text.x=element_blank(),
+#           axis.ticks.x=element_blank(),
+#           axis.title.y=element_blank(),
+#           axis.text.y=element_blank(),
+#           axis.ticks.y=element_blank())
 
 #Clinical type bar
 clinical_order = cluster_dat_ordered_by_patient[,c('clinical_type','PID','core')]
 clinical_order = unique(clinical_order)
 un_clin = unique(clinical_order$clinical_type)
-all_clin_order = clinical_order[order(match(clinical_order$PID,un_patients[o]))]
+all_clin_order = clinical_order[order(match(clinical_order$PID,unique(all_order$PID)))]
 all_clin_order$clinical_type = factor(all_clin_order$clinical_type, levels = c('HR-HER2+','HR+HER2-','HR+HER2+','TripleNeg'))#'NORMAL'
 p3 <- ggplot(all_clin_order, aes(x=1,y=c(1:length(all_clin_order$clinical_type))))+
       geom_tile(aes( fill=clinical_type))+
@@ -695,7 +802,7 @@ p3 <- ggplot(all_clin_order, aes(x=1,y=c(1:length(all_clin_order$clinical_type))
 location_order = cluster_dat_ordered_by_patient[,c('location','PID','core')]
 location_order = unique(location_order)
 un_loc = unique(location_order$location)
-all_loc_order = location_order[order(match(location_order$PID,un_patients[o]))]
+all_loc_order = location_order[order(match(location_order$PID,unique(all_order$PID)))]
 all_loc_order$location = factor(all_loc_order$location, levels = c('CENTER','PERIPHERY','METASTASIS','NORMAL'))#'NORMAL'
 p3 <- ggplot(all_loc_order, aes(x=1,y=c(1:length(all_loc_order$location))))+
       geom_tile(aes( fill=location))+
@@ -708,7 +815,6 @@ p3 <- ggplot(all_loc_order, aes(x=1,y=c(1:length(all_loc_order$location))))+
           axis.ticks.y=element_blank(),
           line = element_blank(),
           legend.position="none")
-
 
 
 #SCP patient groups matched
@@ -726,19 +832,16 @@ p5 <- ggplot(all_pheno_order, aes(x=1,y=c(1:length(all_pheno_order$patient_pheno
           line = element_blank(),
           legend.position="none")
 
-
+#KL divergence of each image to patient average
 kldiv_ordered = data.table(names(unlist(kldiv)))
 kldiv_ordered$kldiv = as.vector(unlist(kldiv))
 names(kldiv_ordered)[1] = 'core'
-kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[3:4],collapse = '.')}))
-
+kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[2],collapse = '.')}))
 add_normals = all_order$core[!all_order$core %in% kldiv_ordered$core]
 kldiv_ordered = rbind(kldiv_ordered,data.frame(core = add_normals, kldiv = rep(NA,length(add_normals))))
-
-kl_order = merge(cluster_dat_ordered_by_patient[,c('patientcode','core')],kldiv_ordered,by = 'core')
+kl_order = merge(cluster_dat_ordered_by_patient[,c('PID','core')],kldiv_ordered,by = 'core')
 kl_order = unique(kl_order)
-all_kl_order = kl_order[order(match(kl_order$patientcode,un_patients[o]))]
-
+all_kl_order = kl_order[order(match(kl_order$PID,unique(all_order$PID)))]
 #Colorbar for kl div from tumor means
 p4 <- ggplot(all_kl_order, aes(x=1,y=c(1:length(all_kl_order$kldiv))))+
       geom_tile(aes( fill=all_kl_order$kldiv))+
@@ -752,11 +855,10 @@ p4 <- ggplot(all_kl_order, aes(x=1,y=c(1:length(all_kl_order$kldiv))))+
           line = element_blank(),
           legend.position="none")
 
-#Shannon
-
-shannon_core = merge(cluster_dat_ordered_by_patient[,c('patientcode','core')],shannon_core,by = 'core')
+#Shannon entropy of each core
+shannon_core = merge(cluster_dat_ordered_by_patient[,c('PID','core')],shannon_core,by = 'core')
 shannon_core = unique(shannon_core)
-all_shannon_order = shannon_core[order(match(shannon_core$patientcode,un_patients[o]))]
+all_shannon_order = shannon_core[order(match(shannon_core$PID,unique(all_order$PID)))]
 
 p7 <- ggplot(all_shannon_order, aes(x=1,y=c(1:length(all_shannon_order$shannon))))+
       geom_tile(aes( fill=all_shannon_order$shannon))+
@@ -770,7 +872,7 @@ p7 <- ggplot(all_shannon_order, aes(x=1,y=c(1:length(all_shannon_order$shannon))
           line = element_blank(),
           legend.position="none")
 
-
+#Plot everything next to each other
 p6 <- ggdraw() +
      draw_plot(p2 + scale_y_reverse(), 0, 0.005, 0.36, 0.984) +
      draw_plot(p ,0.47, 0.035, 0.5, 0.926)+
@@ -780,1222 +882,11 @@ p6 <- ggdraw() +
   draw_plot(p5,0.36,0,0.05,1)
 
 pdf(file="/home/jana/Desktop/R_dat/Image_KLdivs_perc_cluster.pdf", width=15, height=50)
-#cowplot
-
 p6
-
 dev.off()
-
-
-check = na.omit(unique(all_pheno_order[,c('image_pheno','patientcode')]))[by = patientcode]
-check[,count := .N, by = 'patientcode']
-
-```
-
-#KL div per patient group
-```{r}
-kl_group = merge(all_kl_order,asigned,by = 'core')
-
-p = ggplot(kl_group, aes(x = factor(cluster),y = kldiv))+
-  geom_boxplot()+
-  theme(axis.text.x = element_text(color = mycols_patient[sort(as.numeric(unique(kl_group$cluster)))]))
-
-
-pdf(file="/home/jana/Desktop/R_dat/Zurich_asignedPatientgroup_KLdiv.pdf", width=10, height=10)
-
-
-p
-
-dev.off()
-
-kl_group$cluster = factor(kl_group$cluster, levels = c(6,12,11,14,3,1,13,2,4,16,17,15,9,10,18,8,7) )
-kl_group[,mean_kl := mean(kldiv),by = cluster]
-
-cut = unique(kl_group[,c('mean_kl','cluster')])
-cut = cut[order(cluster),]
-
-p7 <- ggplot(cut, aes(x=1,y=1:length(mean_kl)))+
-      geom_tile(aes( fill=mean_kl))+
-  scale_fill_gradient2(low = "blue", mid = "white", high = "purple")+
-  geom_text(aes(label=cluster))+
-    theme(axis.title.x=element_blank(),
-          axis.text.x = element_blank(),
-          axis.ticks.x=element_blank(),
-          axis.title.y=element_blank(),
-          axis.text.y=element_blank(),
-          axis.ticks.y=element_blank(),
-          line = element_blank())
 
 
 ```
-
-#23) Patient clustered stacked barplot, tumors only
-```{r}
-
-
-cluster_dat_tumors[, perc_cells_patient := ncells*100/sum(ncells), by=patientcode]
-cluster_dat_tumors[, area_cells_patient := mean(cluster_by_area), by=c('patientcode','cluster')]
-cluster_dat_tumors = cluster_dat_tumors[order(patientcode)]
-
-#Grade colors
-patient_grade_orig = cluster_dat_tumors[,c('patientcode','grade')]
-patient_grade = unique(patient_grade_orig)
-patient_grade = patient_grade[!duplicated(patient_grade$patientcode),]
-patient_grade = patient_grade[order(patient_grade$patientcode),]
-patient_grade_all = patient_grade[hc$order]
-
-#Patient cluster colors
-patient_cluster_orig = cluster_dat_tumors[,c('patientcode')]#,'patient_pheno'
-patient_cluster = unique(patient_cluster_orig)
-patient_Cluster = patient_cluster[!duplicated(patient_cluster$patientcode),]
-patient_Cluster = patient_Cluster[order(patient_Cluster$patientcode),]
-patient_cluster_all = patient_cluster[hc$order]
-
-
-names(kldiv)[hc$order]
-mean_kldiv_mat_tumors = mean_kldiv_mat_tumors[hc$order]
-mean_kldiv_table =data.table(mean_kldiv_mat_tumors)
-
-#Colorbar for kl div from tumor means
-p3 <- ggplot(mean_kldiv_table, aes(x=1,y=c(1:length(mean_kldiv_table$mean_kldiv_mat))))+
-      geom_tile(aes( fill=mean_kldiv_table$mean_kldiv_mat))+
-   #scale_color_viridis()+
-  scale_fill_gradient2(low = "blue", mid = "white", high = "red")+
-    theme(axis.title.x=element_blank(),
-          axis.text.x=element_blank(),
-          axis.ticks.x=element_blank(),
-          axis.title.y=element_blank(),
-          axis.text.y=element_blank(),
-          axis.ticks.y=element_blank(),
-          line = element_blank(),
-          legend.position="none")
-
-#Colorbar for grade
-p4 <- ggplot(patient_grade_all, aes(x=1,y=c(1:length(patient_grade_all$grade))))+
-      geom_tile(aes( fill=factor(patient_grade_all$grade)))+
-  scale_fill_manual(values = c('green','blue','red'))+
-    theme(axis.title.x=element_blank(),
-          axis.text.x=element_blank(),
-          axis.ticks.x=element_blank(),
-          axis.title.y=element_blank(),
-          axis.text.y=element_blank(),
-          axis.ticks.y=element_blank(),
-          line = element_blank(),
-          legend.position="none")
-
-cut = cluster_dat_tumors[,c('patientcode','cluster','perc_cells_patient')]
-cut = unique(cut)
-#Staqcked bar plot
-p <- ggplot(cut, aes(x=patientcode, y=perc_cells_patient, fill=as.factor(cluster))) + #
-  geom_bar(stat='identity',show.legend = TRUE)+
-  scale_fill_manual("Clusters",values = rev(mycols)[!cluster_order %in% c(1:3,5,7,15:16,18,21,28,39,41)])+ #[setdiff(1:length(mycols_zuri_basel_meta),c(1:24,26:28,34))]
-  scale_x_discrete(limits = patient_cluster_all$patientcode)+
-  labs(fill = "Clusters")+
-  coord_flip()+
-  xlab("Patient")+
-  ylab("Percentage of cluster cells in patient")+
-  theme(panel.background = element_blank())+
-  ggtitle('Patient composition')
-
-#cluster_dat_tumors[cluster_dat_tumors$cohort == 'Zuri',]
-
-
-#Dendrogram of hierarchical clustering
-p2 <- ggdendrogram(hc, rotate = TRUE,labels = TRUE, theme_dendro = TRUE, leaf_labels = FALSE)+
-  theme(axis.title.x=element_blank(),
-          axis.text.x=element_blank(),
-          axis.ticks.x=element_blank(),
-          axis.title.y=element_blank(),
-          axis.text.y=element_blank(),
-          axis.ticks.y=element_blank())
-
-#Alignment is not same when printing to pdf, so don't pay attention to plot displayed in R
-p4 <- ggdraw() +
-     draw_plot(p2 + scale_y_reverse(), 0, 0.001, 0.48, 0.998) +
-     draw_plot(p ,0.5, 0.0355, 0.5, 0.927)+
-    draw_plot(p3,0.45,0.005,0.05,0.995)+
-   draw_plot(p4,0.41,0.005,0.05,0.995)
-
-
-pdf(file="/home/jana/Desktop/R_dat/patientmean_kldiv_percCluster.pdf", width=30, height=50)
-#cowplot
-
-p4
-
-dev.off()
-
-# tr = cbind(cluster_order,col_vector[as.factor(cluster_order)])
-# tr = unique(tr)
-# pdf(file="/home/jana/Desktop/R_dat/Legend.pdf", width=10, height=30)
-# plot(1, type="n", axes=FALSE, xlab="", ylab="")
-# legend(1, 1, legend = tr[,1], col=tr[,2], lwd=8, cex=3, xjust=0.5, yjust=0.5)
-# dev.off()
-# 
-# #Potentially exclude patient clusters
-# excl = patient_cluster_all[patient_cluster_all$patient_pheno %in% c(11,18),'patientcode']
-
-```
-
-#Saturation analysis tests
-```{r}
-#Sample cores
-dat_cut_tumors <- cluster_dat_tumors[,c("core","cluster","perc_cluster","patientcode")]
-one_patient = dat_cut_tumors[dat_cut_tumors$patientcode == 'B08.10992',]
-un_core = unique(one_patient$core)
-set.seed(2)
-sampled = sample(un_core, 100, replace = TRUE, prob = NULL)
-
-previous = data.table(
-  cluster = factor(),
-  previous_mean = numeric())
-kldiv = list()
-
-for (i in 1:length(sampled)){
-  
-  #Currently added image
-  cur_core = sampled[[i]]
-  cur_distribution = one_patient[one_patient$core == cur_core,]
-  
-  #Merge with previous distribution
-  accumulated_distribution = merge(previous[,c('cluster','previous_mean')],cur_distribution[,c('cluster','perc_cluster')],by = 'cluster', all = TRUE)
-    
-  if (i == 1){
-    #Set NAs to 0
-    accumulated_distribution$previous_mean[is.na(accumulated_distribution$previous_mean)] = 0
-    accumulated_distribution$perc_cluster[is.na(accumulated_distribution$perc_cluster)] = 0
-  
-    #tosum up to 100%
-    accumulated_distribution$accumulated_mean = rowSums(accumulated_distribution[,c('previous_mean', 'perc_cluster')])}
-  else{
-    accumulated_distribution = na.omit(accumulated_distribution)
-    
-    #Calculate mean per cluster
-    accumulated_distribution$accumulated_mean = rowMeans(accumulated_distribution[,c('previous_mean', 'perc_cluster')])
-  }
-  
-
-
-  #Calculate KL
-  kldiv[[i]] = KL.plugin(accumulated_distribution$previous_mean, accumulated_distribution$accumulated_mean)
-  previous = accumulated_distribution[,c('cluster','accumulated_mean')]
-    
-  names(previous) = c('cluster','previous_mean')
-}
-
-KL = data.table(unlist(kldiv))
-names(KL)[1] = 'kldiv'
-
-ggplot(KL[2:nrow(KL),],aes(x = 1:length(kldiv),y = cumsum(kldiv)))+
-  geom_point()
-
-
-#Sample cells from pooled patient
-dat_cut_tumors <- cluster_dat_tumors[,c("core","cluster","patientcode")]
-one_patient = dat_cut_tumors[dat_cut_tumors$patientcode == 'B08.10992',]
-one_patient = merge(one_patient,unique(merge(cluster_pheno,dat[,c('core','id')],by = 'id')),by = c('core','cluster'),all.x = TRUE)
-un_cells = unique(one_patient$id)
-set.seed(2)
-#sampled = sample(un_cells, 100, replace = FALSE, prob = NULL)
-
-subsamples = split(one_patient, sample(1:20, nrow(one_patient), replace=F))
-subsamples=one_patient[sample(nrow(one_patient),replace=F,size=0.05*nrow(one_patient)),]
-
-# one_patient    <- one_patient[order(runif(nrow(one_patient))), ]
-# bins  <- rep(1:100, nrow(one_patient) / 100)
-# subsamples = split(one_patient, bins)
-
-previous = data.table(
-  cluster = factor(),
-  previous_mean = numeric())
-kldiv = list()
-shannon = list()
-
-for (i in 1:500){
-  #Currently added cells
-  cur_core = one_patient[sample(nrow(one_patient),replace=F,size=0.5*nrow(one_patient)),]
-  #cur_core = subsamples[[i]]
-  cur_core[,ncells_cluster := .N , by = 'cluster']
-  cur_core[,perc_cluster := ncells_cluster/.N]
-  
-  #Merge with previous distribution
-  accumulated_distribution = merge(previous[,c('cluster','previous_mean')],unique(cur_core[,c('cluster','perc_cluster')]),by = 'cluster', all = TRUE)
-  
-  if (i == 1){
-    #Set NAs to 0
-    accumulated_distribution$previous_mean[is.na(accumulated_distribution$previous_mean)] = 0
-    accumulated_distribution$perc_cluster[is.na(accumulated_distribution$perc_cluster)] = 0
-  
-    #tosum up to 100%
-    accumulated_distribution$accumulated_mean = rowSums(accumulated_distribution[,c('previous_mean', 'perc_cluster')])}
-  else{
-    accumulated_distribution = na.omit(accumulated_distribution)
-    
-    #Calculate mean per cluster
-    accumulated_distribution$accumulated_mean = rowMeans(accumulated_distribution[,c('previous_mean', 'perc_cluster')])
-  }
-
-  #Calculate KL
-  kldiv[[i]] = KL.plugin(accumulated_distribution$previous_mean, accumulated_distribution$perc_cluster)
-  shannon[[i]] = entropy.ChaoShen(accumulated_distribution$accumulated_mean)
-  previous = accumulated_distribution[,c('cluster','accumulated_mean')]
-    
-  names(previous) = c('cluster','previous_mean')
-}
-
-KL = data.table(unlist(kldiv))
-names(KL)[1] = 'kldiv'
-
-ggplot(KL[2:nrow(KL),],aes(x = 1:length(kldiv),y = cumsum(kldiv)))+
-  geom_point()
-
-
-
-#All cells vs less cells
-previous = data.table(
-  cluster = factor(),
-  previous_mean = numeric())
-kldiv = list()
-shannon = list()
-
-range = seq(from = 1, to = (1/100), by = -(1/100))
-first = one_patient[sample(nrow(one_patient),replace=F,size=1*nrow(one_patient)),]
-first[,ncells_cluster := .N , by = 'cluster']
-first[,perc_cluster_first := ncells_cluster/.N]
-
-for (i in 1:length(range)){
-  cur = range[[i]]
-  #Currently added cells
-  cur_core = one_patient[sample(nrow(one_patient),replace=F,size=cur*nrow(one_patient)),]
-  #cur_core = subsamples[[i]]
-  cur_core[,ncells_cluster := .N , by = 'cluster']
-  cur_core[,perc_cluster := ncells_cluster/.N]
-
-  
-  # #Merge with previous distribution
-  # accumulated_distribution = merge(previous[,c('cluster','previous_mean')],unique(cur_core[,c('cluster','perc_cluster')]),by = 'cluster', all = TRUE)
-  # 
-  accumulated_distribution = merge(unique(first[,c('cluster','perc_cluster_first')]),unique(cur_core[,c('cluster','perc_cluster')]),by = 'cluster', all = TRUE)
-  # 
-  # if (i == 1){
-  #   #Set NAs to 0
-  #   accumulated_distribution$previous_mean[is.na(accumulated_distribution$previous_mean)] = 0
-  #   accumulated_distribution$perc_cluster[is.na(accumulated_distribution$perc_cluster)] = 0
-  # 
-  #   #tosum up to 100%
-  #   accumulated_distribution$accumulated_mean = rowSums(accumulated_distribution[,c('previous_mean', 'perc_cluster')])}
-  # else{
-    accumulated_distribution = na.omit(accumulated_distribution)
-    
-    # #Calculate mean per cluster
-    # accumulated_distribution$accumulated_mean = rowMeans(accumulated_distribution[,c('previous_mean', 'perc_cluster')])
-  # }
-
-  #Calculate KL
-  kldiv[[i]] = KL.plugin(accumulated_distribution$perc_cluster_first, accumulated_distribution$perc_cluster)
-  shannon[[i]] = entropy.ChaoShen(accumulated_distribution$perc_cluster)
-  previous = accumulated_distribution[,c('cluster','perc_cluster')]
-    
-  names(previous) = c('cluster','previous_mean')
-}
-
-KL = data.table(unlist(kldiv))
-names(KL)[1] = 'kldiv'
-
-ggplot(KL[2:nrow(KL),],aes(x = 1:length(kldiv),y = cumsum(kldiv)))+
-  geom_point()
-
-
-
-#Small fraction to all (increasing size)
-previous = data.table(
-  cluster = factor(),
-  previous_mean = numeric())
-kldiv = list()
-shannon = list()
-
-range = rev(seq(from = 1, to = (1/100), by = -(1/100)))
-first = one_patient[sample(nrow(one_patient),replace=F,size=1*nrow(one_patient)),]
-first[,ncells_cluster := .N , by = 'cluster']
-first[,perc_cluster_first := ncells_cluster/.N]
-
-for (i in 1:length(range)){
-  cur = range[[i]]
-  #Currently added cells
-  cur_core = one_patient[sample(nrow(one_patient),replace=F,size=cur*nrow(one_patient)),]
-  #cur_core = subsamples[[i]]
-  cur_core[,ncells_cluster := .N , by = 'cluster']
-  cur_core[,perc_cluster := ncells_cluster/.N]
-
-  
-  # #Merge with previous distribution
-  # accumulated_distribution = merge(previous[,c('cluster','previous_mean')],unique(cur_core[,c('cluster','perc_cluster')]),by = 'cluster', all = TRUE)
-  # 
-  accumulated_distribution = merge(unique(first[,c('cluster','perc_cluster_first')]),unique(cur_core[,c('cluster','perc_cluster')]),by = 'cluster', all = TRUE)
-  # 
-  # if (i == 1){
-  #   #Set NAs to 0
-  #   accumulated_distribution$previous_mean[is.na(accumulated_distribution$previous_mean)] = 0
-  #   accumulated_distribution$perc_cluster[is.na(accumulated_distribution$perc_cluster)] = 0
-  # 
-  #   #tosum up to 100%
-  #   accumulated_distribution$accumulated_mean = rowSums(accumulated_distribution[,c('previous_mean', 'perc_cluster')])}
-  # else{
-    accumulated_distribution = na.omit(accumulated_distribution)
-    
-    # #Calculate mean per cluster
-    # accumulated_distribution$accumulated_mean = rowMeans(accumulated_distribution[,c('previous_mean', 'perc_cluster')])
-  # }
-
-  #Calculate KL
-  kldiv[[i]] = KL.plugin(accumulated_distribution$perc_cluster_first, accumulated_distribution$perc_cluster)
-  shannon[[i]] = entropy.ChaoShen(accumulated_distribution$perc_cluster)
-  previous = accumulated_distribution[,c('cluster','perc_cluster')]
-    
-  names(previous) = c('cluster','previous_mean')
-}
-
-KL = data.table(unlist(kldiv))
-names(KL)[1] = 'kldiv'
-
-ggplot(KL[2:nrow(KL),],aes(x = 1:length(kldiv),y = cumsum(kldiv)))+
-  geom_point()
-
-
-
-#Small fraction to larger (increasing size)
-previous = data.table(
-  cluster = factor(),
-  previous_mean = numeric())
-kldiv = list()
-shannon = list()
-
-range = rev(seq(from = 1, to = (1/100), by = -(1/100)))
-
-
-for (i in 1:length(range)){
-  cur = range[[i]]
-  #Currently added cells
-  cur_core = one_patient[sample(nrow(one_patient),replace=F,size=cur*nrow(one_patient)),]
-  #cur_core = subsamples[[i]]
-  cur_core[,ncells_cluster := .N , by = 'cluster']
-  cur_core[,perc_cluster := ncells_cluster/.N]
-
-
-  #Merge with previous distribution
-  accumulated_distribution = merge(previous[,c('cluster','previous_mean')],unique(cur_core[,c('cluster','perc_cluster')]),by = 'cluster', all = TRUE)
-
-  
-
-  if (i == 1){
-    #Set NAs to 0
-    accumulated_distribution$previous_mean[is.na(accumulated_distribution$previous_mean)] = 0
-    accumulated_distribution$perc_cluster[is.na(accumulated_distribution$perc_cluster)] = 0
-
-    #tosum up to 100%
-    accumulated_distribution$accumulated_mean = rowSums(accumulated_distribution[,c('previous_mean', 'perc_cluster')])}
-  else{
-   accumulated_distribution = na.omit(accumulated_distribution)
-
-  #Calculate mean per cluster
-  accumulated_distribution$accumulated_mean = rowMeans(accumulated_distribution[,c('previous_mean', 'perc_cluster')])
-  }
-
-  #Calculate KL
-  kldiv[[i]] = KL.plugin(accumulated_distribution$previous, accumulated_distribution$perc_cluster)
-  shannon[[i]] = entropy.ChaoShen(accumulated_distribution$perc_cluster)
-  previous = accumulated_distribution[,c('cluster','perc_cluster')]
-    
-  names(previous) = c('cluster','previous_mean')
-}
-
-KL = data.table(unlist(kldiv))
-names(KL)[1] = 'kldiv'
-
-ggplot(KL[2:nrow(KL),],aes(x = 1:length(kldiv),y = cumsum(kldiv)))+
-  geom_point()
-
-
-```
-#Not means but treat as one sample
-```{r}
-#Sample cells from pooled patient
-dat_cut_tumors <- cluster_dat_tumors[,c("core","cluster","patientcode")]
-one_patient = dat_cut_tumors[dat_cut_tumors$patientcode == 'B09.40012',]
-one_patient = merge(one_patient,unique(merge(cluster_pheno,dat[,c('core','id')],by = 'id')),by = c('core','cluster'),all.x = TRUE)
-un_cells = unique(one_patient$id)
-#set.seed(2)
-#sampled = sample(un_cells, 100, replace = FALSE, prob = NULL)
-
-subsamples = split(one_patient, sample(1:100, nrow(one_patient), replace=T))
-
-
-previous = data.table(
-  sample = numeric(),
-  cluster = factor(),
-  id = character(),
-  perc_cluster = numeric())
-kldiv = list()
-shannon = list()
-
-for (i in 1:length(subsamples)){
-  #Currently added cells
-  cur_core = subsamples[[i]]
-  cur_core[,sample:= unlist(rep(i,nrow(cur_core)))]
-  
-  #Merge with previous distribution
-  accumulated_distribution = rbind(unique(previous[,c('sample','cluster','id')]),unique(cur_core[,c('sample','cluster','id')]))
-  accumulated_distribution[,ncells_cluster := .N , by = 'cluster']
-  accumulated_distribution[,perc_cluster := ncells_cluster/.N]
-  
-  to_test = merge(unique(previous[,c('cluster','perc_cluster')]),unique(accumulated_distribution[,c('cluster','perc_cluster')]),by = 'cluster',all = TRUE)
-  
-
-  # to_test$previous_mean[is.na(to_test$perc_cluster.x)] = 0
-  # to_test$perc_cluster[is.na(to_test$perc_cluster.y)] = 0
-
-  to_test = na.omit(to_test)
-
-
-  #Calculate KL
-  kldiv[[i]] = KL.plugin(to_test$perc_cluster.x, to_test$perc_cluster.y)
-
-  previous = accumulated_distribution[,c('sample','cluster','perc_cluster','id')]
-    
-}
-
-KL = data.table(unlist(kldiv))
-names(KL)[1] = 'kldiv'
-
-ggplot(KL[2:nrow(KL),],aes(x = 1:length(kldiv),y = cumsum(kldiv)))+
-  geom_point()
-
-
-
-#Sample cores
-dat_cut_tumors <- cluster_dat_tumors[,c("core","cluster","patientcode")]
-one_patient = dat_cut_tumors[dat_cut_tumors$patientcode == 'B09.40012',]
-one_patient = merge(one_patient,unique(merge(cluster_pheno,dat[,c('core','id')],by = 'id')),by = c('core','cluster'),all.x = TRUE)
-un_core = unique(one_patient$core)
-#set.seed(2)
-sampled = sample(un_core, 50, replace = TRUE, prob = NULL)
-
-previous = data.table(
-  sample = numeric(),
-  core = character(),
-  cluster = factor(),
-  id = character(),
-  perc_cluster = numeric())
-kldiv = list()
-shannon = list()
-
-for (i in 1:length(sampled)){
-  #Currently added cells
-  cur = sampled[[i]]
-  cur_core = one_patient[one_patient$core == cur,]
-  cur_core[,sample:= unlist(rep(i,nrow(cur_core)))]
-  
-  #Merge with previous distribution
-  accumulated_distribution = rbind(unique(previous[,c('sample','core','cluster','id')]),unique(cur_core[,c('sample','core','cluster','id')]))
-  accumulated_distribution[,ncells_cluster := .N , by = 'cluster']
-  accumulated_distribution[,perc_cluster := ncells_cluster/.N]
-  
-  to_test = merge(unique(previous[,c('cluster','perc_cluster')]),unique(accumulated_distribution[,c('cluster','perc_cluster')]),by = 'cluster',all = TRUE)
-  
-
-  # to_test$previous_mean[is.na(to_test$perc_cluster.x)] = 0
-  # to_test$perc_cluster[is.na(to_test$perc_cluster.y)] = 0
-
-  to_test = na.omit(to_test)
-
-
-  #Calculate KL
-  kldiv[[i]] = KL.plugin(to_test$perc_cluster.x, to_test$perc_cluster.y)
-
-  previous = accumulated_distribution[,c('sample','core','cluster','perc_cluster','id')]
-    
-}
-
-KL = data.table(unlist(kldiv))
-names(KL)[1] = 'kldiv'
-
-ggplot(KL[2:nrow(KL),],aes(x = 1:length(kldiv),y = cumsum(kldiv)))+
-  geom_point()
-
-```
-
-#22) Compute KL divergence for patients clustering with tumors only mean
-Whatch out whether want to use ncells or perc_cluster or cluster_by_area!!
-```{r}
-
-# all_perms = Permn(levels(dat_cut_tumors$cluster),length(levels(dat_cut_tumors$cluster)))
-# all_perms =permutations(n=40,r=40,v=levels(dat_cut_tumors$cluster),repeats.allowed=F)
-# all_perms = allPerms(levels(dat_cut_tumors$cluster), control = how(), check = TRUE)
-# 
-# for (i in all_perms)
-
-
-#KL divergence per patient
-
-#Tumors mean
-dat_cut_tumors <- cluster_dat_tumors[,c("core","cluster","perc_cluster","patientcode")]
-
-#Make missing cells types 0
-dat_cut_tumors_wide = dcast.data.table(dat_cut_tumors,formula = 'patientcode + core ~ cluster',value.var = 'perc_cluster',fill = 0)
-dat_cut_tumors_long = melt.data.table(dat_cut_tumors_wide, id.vars = c('patientcode','core') ,variable.name = 'cluster', value.name = 'perc_cluster')
-
-#split into patients
-ind_patients <- split( dat_cut_tumors_long , f = dat_cut_tumors_long$patientcode )
-all_patient = lapply(ind_patients, function(x){x[order(x$core),]})
-all_patient_tumors = lapply(all_patient,function(x){x[, patient_mean := mean(perc_cluster), by=cluster]})
-ind_cores_tumors <- lapply(all_patient_tumors, function(x){split( x , f = x$core )})
-
-library("entropy")
-kldiv <- lapply(ind_cores_tumors, function(x){lapply(x,function(y){KL.plugin(y$perc_cluster, na.omit(y$patient_mean))})})
-sum_kldiv <- lapply(kldiv,function(x){Reduce("+",x)})
-length_kldiv <- lapply(kldiv,function(x){length(x)})
-mean_kldiv_mat_tumors <- unlist(t(sum_kldiv))/unlist(t(length_kldiv))
-sum_kldiv_mat_tumors <- unlist(t(sum_kldiv))
-
-
-#Shannon entropy per core
-dat_cut_tumors <- unique(cluster_dat_tumors[,c("core","cluster","ncells")])
-
-#split into cores
-ind_cores <- split( dat_cut_tumors , f = dat_cut_tumors$core )
-
-shannon_cores = lapply(ind_cores, function(x){entropy.ChaoShen(x$ncells)})
-
-shannon_core = data.table(unlist(names(shannon_cores)))
-names(shannon_core) = "core"
-shannon_core$shannon = unlist(shannon_cores)
-
-
-
-
-#Grade
-
-kldiv_ordered = data.table(names(unlist(kldiv)))
-kldiv_ordered$kldiv = as.vector(unlist(kldiv))
-names(kldiv_ordered)[1] = 'core'
-kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[3:4],collapse = '.')}))
-kldiv_ordered = merge(kldiv_ordered, Sample_metadata, by = 'core')
-kldiv_ordered[,meanKL := mean(kldiv),by = 'patientcode']
-kldiv_ordered = unique(kldiv_ordered[,c('patientcode','meanKL','grade')])
-
-p <- ggplot(kldiv_ordered, aes(x=factor(grade), y=meanKL)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("Mean KL divergence of patient")+
-  xlab("Grade")+
-  theme(panel.background = element_blank())+
-  ggtitle('Patients')
-
-
-#PTNM_M/PTNM_N
-
-kldiv_ordered = data.table(names(unlist(kldiv)))
-kldiv_ordered$kldiv = as.vector(unlist(kldiv))
-names(kldiv_ordered)[1] = 'core'
-kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[3:4],collapse = '.')}))
-kldiv_ordered = merge(kldiv_ordered, Sample_metadata, by = 'core')
-kldiv_ordered[,meanKL := mean(kldiv),by = 'patientcode']
-kldiv_ordered = unique(kldiv_ordered[,c('patientcode','meanKL','PTNM_N')])
-
-
-p <- ggplot(kldiv_ordered, aes(x=factor(PTNM_N), y=meanKL)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("Mean KL divergence of patient")+
-  xlab("PTNM_N")+
-  theme(panel.background = element_blank())+
-  ggtitle('PTNM_N')
-
-pdf('/home/jana/Desktop/R_dat/CoreKLdiv_to_patientMean_perNodestatus.pdf',width = 30, height = 10)
-p
-dev.off()
-
-
-#Type
-
-kldiv_ordered = data.table(names(unlist(kldiv)))
-kldiv_ordered$kldiv = as.vector(unlist(kldiv))
-names(kldiv_ordered)[1] = 'core'
-kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[3:4],collapse = '.')}))
-kldiv_ordered = merge(kldiv_ordered, Sample_metadata, by = 'core')
-kldiv_ordered[,meanKL := mean(kldiv),by = 'patientcode']
-kldiv_ordered = unique(kldiv_ordered[,c('patientcode','meanKL','tumor_type')])
-
-
-p <- ggplot(kldiv_ordered, aes(x=factor(tumor_type), y=meanKL)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("Mean KL divergence of patient")+
-  xlab("PTNM_M")+
-  theme(panel.background = element_blank())+
-  ggtitle('PTNM_M')
-
-pdf('/home/jana/Desktop/R_dat/CoreKLdiv_to_patientMean_perType.pdf',width = 30, height = 10)
-p
-dev.off()
-
-
-#Size/age
-
-kldiv_ordered = data.table(names(unlist(kldiv)))
-kldiv_ordered$kldiv = as.vector(unlist(kldiv))
-names(kldiv_ordered)[1] = 'core'
-kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[3:4],collapse = '.')}))
-kldiv_ordered = merge(kldiv_ordered, Sample_metadata, by = 'core')
-kldiv_ordered[,meanKL := mean(kldiv),by = 'patientcode']
-kldiv_ordered = unique(kldiv_ordered[,c('patientcode','meanKL','age')])
-
-
-p <- ggplot(kldiv_ordered, aes(x=age, y=meanKL)) + 
-  geom_point()+
-  geom_smooth()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("Mean KL divergence of patient")+
-  xlab("age")+
-  theme(panel.background = element_blank())+
-  ggtitle('age')
-
-pdf('/home/jana/Desktop/R_dat/CoreKLdiv_to_patientMean_perMetstatus.pdf',width = 30, height = 10)
-p
-dev.off()
-
-
-
-
-# #TNBC
-# names(asigned)[2] = 'cluster'
-# names(asigned)[1] = 'core'
-# TNBC = merge(asigned[cluster %in% 14:17,],unique(Sample_metadata[,c('patientcode','core')]),by = 'core')
-# TNBC = unique(TNBC$patientcode)
-# kldiv_ordered$type[kldiv_ordered$patientcode %in% TNBC] = 'TNBC'
-# Basal = merge(asigned[cluster %in% 13,],unique(Sample_metadata[,c('patientcode','core')]),by = 'core')
-# Basal = unique(Basal$patientcode)
-# kldiv_ordered$type[kldiv_ordered$patientcode %in% Basal] = 'Basal'
-# CK7 = merge(asigned[cluster %in% 11:12,],unique(Sample_metadata[,c('patientcode','core')]),by = 'core')
-# CK7 = unique(CK7$patientcode)
-# kldiv_ordered$type[kldiv_ordered$patientcode %in% CK7] = 'CK7'
-# CK7 = merge(asigned[cluster %in% 11:12,],unique(Sample_metadata[,c('patientcode','core')]),by = 'core')
-# CK7 = unique(CK7$patientcode)
-# kldiv_ordered$type[kldiv_ordered$patientcode %in% CK7] = 'CK7'
-
-
-#Patientgroups
-
-kldiv_ordered = data.table(names(unlist(kldiv)))
-kldiv_ordered$kldiv = as.vector(unlist(kldiv))
-names(kldiv_ordered)[1] = 'core'
-kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[3:4],collapse = '.')}))
-kldiv_ordered = merge(kldiv_ordered,asigned, by = 'core')
-
-
-p <- ggplot(kldiv_ordered, aes(x=factor(cluster), y=kldiv)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("KL div to patietn average of core")+
-  xlab("Patientgroup")+
-  theme(panel.background = element_blank())+
-  ggtitle('Cores assigned to patient group')
-
-pdf('/home/jana/Desktop/R_dat/CoreKLdiv_to_patientMean_perAssignedPatientgroup.pdf')
-p
-dev.off()
-
-
-#mArc groups
-
-kldiv_ordered = data.table(names(unlist(kldiv)))
-kldiv_ordered$kldiv = as.vector(unlist(kldiv))
-names(kldiv_ordered)[1] = 'core'
-kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[3:4],collapse = '.')}))
-kldiv_ordered = merge(kldiv_ordered,neighb_clusters, by = 'core')
-
-
-p <- ggplot(kldiv_ordered, aes(x=factor(cluster), y=kldiv)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("KL div to patietn average of core")+
-  xlab("mArc")+
-  theme(panel.background = element_blank())+
-  ggtitle('Cores mArc')
-
-pdf('/home/jana/Desktop/R_dat/CoreKLdiv_to_patientMean_mArc.pdf')
-p
-dev.off()
-
-
-
-
-
-#Shannon per patient grade/PTNM_M/PTNM_N
-dat_cut_tumors <- cluster_dat_tumors[,c("core","cluster","ncells","patientcode")]
-
-ind_patients <- split( dat_cut_tumors , f = dat_cut_tumors$patientcode )
-all_patient = lapply(ind_patients, function(x){x[order(x$core),]})
-ind_cores_tumors <- lapply(all_patient, function(x){split( x , f = x$core )})
-
-shannon_patients = lapply(ind_cores_tumors, function(y){lapply(y, function(x){entropy.ChaoShen(x$ncells)})})
-sum_shannon <- lapply(shannon_patients,function(x){Reduce("+",x)})
-length_shannon <- lapply(shannon_patients,function(x){length(x)})
-mean_shannon_patient <- unlist(t(sum_shannon))/unlist(t(length_shannon))
-
-shannon_patient = data.table(unlist(names(ind_cores_tumors)))
-names(shannon_patient) = "patientcode"
-shannon_patient$shannon = mean_shannon_patient
-shannon_patient = merge(shannon_patient, unique(Sample_metadata[,c('patientcode','PTNM_N')]),by = 'patientcode')
-shannon_patient = shannon_patient[PTNM_N != 'METASTASIS']
-
-
-p <- ggplot(shannon_patient, aes(x=factor(PTNM_N), y=shannon)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("KL div to patietn average of core")+
-  xlab("mArc")+
-  theme(panel.background = element_blank())+
-  ggtitle('Cores mArc')
-
-pdf('/home/jana/Desktop/R_dat/CoreKLdiv_to_patientMean_mArc.pdf')
-p
-dev.off()
-
-
-#Shannon per patientgroup/ mArc
-
-ind_patients <- split( dat_cut_tumors , f = dat_cut_tumors$patientcode )
-all_patient = lapply(ind_patients, function(x){x[order(x$core),]})
-ind_cores_tumors <- lapply(all_patient, function(x){split( x , f = x$core )})
-
-shannon_patients = lapply(ind_cores_tumors, function(y){lapply(y, function(x){entropy.ChaoShen(x$ncells)})})
-sum_shannon <- lapply(shannon_patients,function(x){Reduce("+",x)})
-length_shannon <- lapply(shannon_patients,function(x){length(x)})
-mean_shannon_patient <- unlist(t(sum_shannon))/unlist(t(length_shannon))
-
-shannon_patient = data.table(names(unlist(shannon_patients)))
-names(shannon_patient) = "core"
-shannon_patient$core = unlist(lapply(strsplit(shannon_patient$core,'[.]'), function(x){paste(x[3:4],collapse = '.')}))
-shannon_patient$core = unique(shannon_patient$core)
-shannon_patient$shannon = as.vector(unlist(shannon_patients))
-shannon_patient = merge(shannon_patient, asigned,by = 'core')
-
-
-p <- ggplot(shannon_patient, aes(x=factor(cluster), y=shannon)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("Shannonentropy of core")+
-  xlab("mArc")+
-  theme(panel.background = element_blank())+
-  ggtitle('Cores Shannon')
-
-pdf('/home/jana/Desktop/R_dat/CoreShannon_Patientgroup_zurich.pdf')
-p
-dev.off()
-
-
-
-
-
-##################################
-
-#Chisq or Kolmogorov-Smirnof
-
-dat_cut_tumors = cluster_dat_tumors[,c('core','cluster','ncells','patientcode')]
-
-dat_cut_tumors_wide = dcast.data.table(dat_cut_tumors,formula = 'patientcode + core ~ cluster',value.var = 'ncells',fill = 0)
-dat_cut_tumors_long = melt.data.table(dat_cut_tumors_wide, id.vars = c('patientcode','core') ,variable.name = 'cluster', value.name = 'ncells')
-
-#split into patients
-ind_patients <- split( dat_cut_tumors_long , f = dat_cut_tumors_long$patientcode )
-all_patient = lapply(ind_patients, function(x){x[order(x$core),]})
-all_patient_tumors = lapply(all_patient,function(x){x[, patient_mean := sum(ncells), by=cluster]})
-ind_cores_tumors <- lapply(all_patient_tumors, function(x){split( x , f = x$core )})
-
-
-
-cur = all_patient_tumors[[2]]
-cur = cur[cur$patient_mean != 0,]
-cur_images = split( cur , f = cur$core )
-
-dgof::ks.test(cur_images[[1]]$perc_cluster, cur_images[[3]]$perc_cluster,simulate.p.value = T)
-
-
-# 
-test = cbind(cur_images[[1]]$ncells,cur_images[[3]]$ncells)
-test = test[which(rowSums(test) > 0),] 
-a = chisq.test(test, simulate.p.value = T)
-
-
-
-
-
-#######################################
-#Tumors only for patients clustering
-grade_patient = cluster_dat_tumors [,c("grade","patientcode")]
-grade_patient = grade_patient[order(patientcode)]
-grade_patient = unique(grade_patient)
-# grade_patient$meanKLdiv = data.frame(mean_kldiv_mat_tumors)
-# grade_patient = grade_patient[!duplicated(grade_patient$patientcode),]
-grade_patient$meanKLdiv[grade_patient$patientcode %in% names(sum_kldiv)] = mean_kldiv_mat_tumors[names(sum_kldiv) %in% grade_patient$patientcode]
-grade_patient$meanShannon[grade_patient$patientcode %in% names(sum_shannon)] = mean_shannon_mat_tumors[names(sum_shannon) %in% grade_patient$patientcode]
-#double check actual mean
-ones <- grade_patient[grade_patient$grade == 1,]
-threes <- grade_patient[grade_patient$grade == 3,]
-
-p <- ggplot(grade_patient,aes(as.factor(grade), meanKLdiv))+
-geom_boxplot()
-pdf(file="/home/jana/Desktop/R_dat/KLdiv_grades_intrapatient.pdf", width=10, height=10)
-p
-dev.off()
-# T-tests
-y[grade_patient$grade == 2] = 1
-y[grade_patient$grade == 3] = 0
-y = y[!grade_patient$grade == 1]
-x = grade_patient$meanKLdiv[!grade_patient$grade == 1]
-t.test(x~as.factor(y))
-
-shannon_patients = lapply(ind_cores_tumors, function(y){lapply(y, function(x){entropy.ChaoShen(x$cluster_by_area)})})
-sum_shannon <- lapply(shannon_patients,function(x){Reduce("+",x)})
-length_shannon <- lapply(shannon_patients,function(x){length(x)})
-mean_shannon_mat_tumors <- unlist(t(sum_shannon))/unlist(t(length_shannon))
-grade_patient$meanShannon = data.frame(mean_shannon_mat_tumors)
-
-p <- ggplot(grade_patient, aes(x=factor(grade), y=meanKLdiv, fill=meanShannon)) + 
-  geom_boxplot()+
-  geom_point(size=2, alpha=1,aes(color=meanShannon))+
-  scale_color_viridis(option="magma")+
-  #stat_summary( fun.y = "mean",geom="point",colour = "black", size = 5)+
-  #stat_summary(aes(group=grade), fun.y=mean, geom="line", colour="green")+
-  ylab("Mean KL divergence of patient")+
-  xlab("Grade")+
-  theme(panel.background = element_blank())+
-  ggtitle('Patients')
-  
-
-pdf(file="/home/jana/Desktop/R_dat/KL_shannonArea_grade.pdf", width=10, height=10)
-p
-dev.off()
-
-p <- ggplot(grade_patient, aes(x=meanShannon, y=meanKLdiv, fill=factor(grade))) + 
-  geom_point(size=2, alpha=1,aes(color=col_vector[factor(grade)]))+
-  geom_smooth(method=lm)
-pdf(file="/home/jana/Desktop/R_dat/KL_vs_shannon.pdf", width=10, height=10)
-p
-dev.off()
-
-p <- ggplot(grade_patient, aes(x=meanShannon, y=meanKLdiv)) + 
-  geom_point(size=2, alpha=1)+
-  geom_smooth(method=lm)
-
-p1 = ggplot(grade_patient, aes(x = meanShannon)) + #, color = as.factor(grade)
-  geom_density()
-
-
-
-size_patient = cluster_dat_tumors [,c("tumor_size","patientcode")]
-size_patient = size_patient[order(patientcode)]
-size_patient = unique(size_patient)
-size_patient =size_patient[!is.na(size_patient$tumor_size),]
-size_patient =size_patient[!size_patient$tumor_size == 0,]
-# size_patient[!which(str_detect(size_patient$patientcode,"B08.44927"))[1],]
-size_patient$meanKLdiv[size_patient$patientcode %in% names(sum_kldiv)] = mean_kldiv_mat_tumors[names(sum_kldiv) %in% size_patient$patientcode]
-size_patient$meanShannon[size_patient$patientcode %in% names(sum_shannon)] = mean_shannon_mat_tumors[names(sum_shannon) %in% size_patient$patientcode]
-
-p2 <-ggplot(size_patient,aes(x = tumor_size,y=meanKLdiv,fill = meanShannon))+
-  geom_point(size=2, alpha=1,aes(color=meanShannon))+
-  scale_color_viridis(option="magma")+
-  geom_smooth(method=lm)
-pdf(file="/home/jana/Desktop/R_dat/KLdiv_tumor_size_shannon.pdf", width=10, height=10)
-p2
-dev.off()
-
-p <- ggplot(size_patient, aes(x=meanShannon, y=meanKLdiv, fill=tumor_size)) + 
-  geom_point(size=2, alpha=1,aes(color=tumor_size))+
-  scale_color_viridis(option="magma")+
-  geom_smooth(method=lm)
-pdf(file="/home/jana/Desktop/R_dat/KL_vs_shannon.pdf", width=10, height=10)
-p
-dev.off()
-
-
-PTNM_M_patient = cluster_dat_tumors[,c("Subtype","patientcode")]
-PTNM_M_patient = PTNM_M_patient[order(patientcode)]
-PTNM_M_patient = unique(PTNM_M_patient)
-PTNM_M_patient$meanKLdiv[PTNM_M_patient$patientcode %in% names(sum_kldiv)] = mean_kldiv_mat_tumors[names(sum_kldiv) %in% PTNM_M_patient$patientcode]
-PTNM_M_patient$meanShannon[PTNM_M_patient$patientcode %in% names(sum_shannon)] = mean_shannon_mat_tumors[names(sum_shannon) %in% PTNM_M_patient$patientcode]
-
-p <- ggplot(PTNM_M_patient,aes(as.factor(Subtype), meanKLdiv))+
-geom_boxplot()
-
-age_patient = cluster_dat_tumors[,c("age","patientcode")]
-age_patient = age_patient[order(patientcode)]
-age_patient = unique(age_patient)
-age_patient$meanKLdiv[age_patient$patientcode %in% names(sum_kldiv)] = mean_kldiv_mat_tumors[names(sum_kldiv) %in% age_patient$patientcode]
-age_patient$meanShannon[age_patient$patientcode %in% names(sum_shannon)] = mean_shannon_mat_tumors[names(sum_shannon) %in% age_patient$patientcode]
-
-p2 <-ggplot(age_patient,aes(x = age,y=meanShannon,fill = meanKLdiv))+
-  geom_point(size=2, alpha=1,aes(color=meanKLdiv))+
-  scale_color_viridis(option="magma")+
-  geom_smooth(method=lm)
-
-
-cluster_patient = cluster_dat_tumors[,c("patient_pheno","patientcode")]
-cluster_patient = cluster_patient[order(patientcode)]
-cluster_patient = unique(cluster_patient)
-cluster_patient$meanKLdiv[cluster_patient$patientcode %in% names(sum_kldiv)] = mean_kldiv_mat_tumors[names(sum_kldiv) %in% cluster_patient$patientcode]
-cluster_patient$meanShannon[cluster_patient$patientcode %in% names(sum_shannon)] = mean_shannon_mat_tumors[names(sum_shannon) %in% cluster_patient$patientcode]
-
-p <- ggplot(cluster_patient,aes(as.factor(patient_pheno), meanKLdiv))+
-geom_boxplot()
-
-
-#All patient samples vs tumor mean
-cluster_dat_tumors[,tumor_logical := grade %in% c("1","2","3")]
-cluster_dat_tumors[,to_calc_mean := cluster_by_area]
-cluster_dat_tumors$to_calc_mean[cluster_dat_tumors$tumor_logical == 'FALSE'] = NA
-dat_cut <- cluster_dat_tumors[,c("core","cluster","cluster_by_area","patientcode","to_calc_mean")]
-ind_patients <- split( dat_cut , f = dat_cut$patientcode )
-all_patient = lapply(ind_patients, function(x){x[order(x$core),]})
-all_patient_mean = lapply(all_patient,function(x){x[, patient_mean := mean(na.omit(to_calc_mean)), by=cluster]})
-ind_cores_all <- lapply(all_patient, function(x){split( x , f = x$core )})
-
-
-library("entropy")
-kldiv <- lapply(ind_cores_all, function(x){lapply(x,function(y){KL.plugin(y$cluster_by_area, na.omit(y$patient_mean))})})
-sum_kldiv <- lapply(kldiv,function(x){Reduce("+",x)})
-length_kldiv <- lapply(kldiv,function(x){length(x)})
-mean_kldiv_mat <- unlist(t(sum_kldiv))/unlist(t(length_kldiv))
-sum_kldiv_mat <- unlist(t(sum_kldiv))
-
-#To add to image clustering of all samples
-KLdiv_to_PatientMean_allImages = unlist(kldiv)
-KLdiv_to_PatientMean_allImages = data.table(KLdiv_to_PatientMean_allImages)
-
-patient_images = cluster_dat_tumors[,c("patientcode","core","location")]
-patient_images = patient_images [order(patientcode)]
-patient_images = unique(patient_images)
-
-#Order according to core names from patient name ordering
-KLdiv_to_PatientMean_allImages = KLdiv_to_PatientMean_allImages[order(patient_images$core)]
-
-
-#Individual shannon index of images
-shannon <- data.table(unlist(lapply(ind_cores_all, function(y){lapply(y, function(x){entropy.ChaoShen(x$cluster_by_area)})})))
-shannon = shannon[order(patient_images$core)]
-
-center_periphey = cbind(patient_images,shannon)
-colnames(center_periphey)[4] = 'ShannonIdx'
-p <- ggplot(center_periphey,aes(as.factor(location), ShannonIdx))+
-geom_boxplot()
-pdf(file="/home/jana/Desktop/R_dat/Shannon_location.pdf", width=10, height=10)
-p
-dev.off()
-
-#paired t-test
-center_periphey = center_periphey[!center_periphey$location %in% c('NORMAL','CONTROL','METASTASIS'),]
-center_periphey[,mean := mean(V1), by = c('patientcode','location')]
-center_periphey =center_periphey[,c('patientcode','location','mean')]
-center_periphey = unique(center_periphey)
-
-cp_wide = dcast.data.table(center_periphey, formula = 'patientcode ~ location', value.var = 'mean') 
-
-cp_grade = merge(cp_wide,grade_patient[,c('grade','patientcode')], by = 'patientcode')
-grade = cp_grade[cp_grade$grade == 1,]
-
-t.test(grade3$CENTER, grade3$PERIPHERY, paired=TRUE)
-
-```
-
-#KL div grade1,2,3... kick out top part to only compare existing types and not zeros
-```{r}
-
-#Fill up zero clusters for each image
-all_clusters = unique(cluster_dat$cluster)
-cluster_dat_cut = unique(cluster_dat[,c("core","cluster","perc_cluster","patientcode","grade")])
-ind_cores <- split( cluster_dat_cut , f = cluster_dat_cut$core )
-cluster_dat_complete =lapply(ind_cores,function(x){x = data.frame(rbind(as.matrix(x),as.matrix(data.frame(cbind(rep(unique(x$core),length(which(!all_clusters %in% x$cluster))),all_clusters[!all_clusters %in% x$cluster],rep(0, length(which(!all_clusters %in% x$cluster))),rep(unique(x$patientcode),length(which(!all_clusters %in% x$cluster))),rep(unique(x$grade),length(which(!all_clusters %in% x$cluster))))))))})
-
-
-cluster_dat_complete = ldply(cluster_dat_complete, data.frame)
-cluster_dat_complete = cluster_dat_complete[,2:ncol(cluster_dat_complete)]
-cluster_dat_complete = data.table(cluster_dat_complete)
-cluster_dat_complete$perc_cluster = as.numeric(as.character(cluster_dat_complete$perc_cluster))
-
-
-normal = subset(cluster_dat, grade %in% 'NORMAL')
-grade1 = subset(cluster_dat, grade %in% 1)
-grade2 = subset(cluster_dat, grade %in% 2)
-grade3 = subset(cluster_dat, grade %in% 3)
-
-normal_cut <- normal[,c("core","cluster","ncells","patientcode")]
-grade1_cut <- grade1[,c("core","cluster","ncells","patientcode")]
-grade2_cut <- grade2[,c("core","cluster","ncells","patientcode")]
-grade3_cut <- grade3[,c("core","cluster","ncells","patientcode")]
-
-#Normal
-normal_cut[,overall_mean := mean(ncells), by = cluster]
-ind_patients <- split( normal_cut , f = normal_cut$patientcode )
-all_patient_normal = lapply(ind_patients,function(x){x[, patient_mean := mean(ncells), by=cluster]})
-library("entropy")
-kldiv <- lapply(all_patient_normal, function(x){KL.plugin(x$patient_mean, x$overall_mean)})
-sum_kldiv <- lapply(kldiv,function(x){Reduce("+",x)})
-length_kldiv <- lapply(kldiv,function(x){length(x)})
-mean_kldiv_mat_normal <- unlist(t(sum_kldiv))/unlist(t(length_kldiv))
-normalKL = cbind(data.frame(names(kldiv)),data.frame(mean_kldiv_mat_normal))
-names(normalKL) = c('patientcode','KLdiv')
-normalKL$grade = factor('NORMAL')
-
-#Grade1
-grade1_cut[,overall_mean := mean(ncells), by = cluster]
-ind_patients <- split( grade1_cut , f = grade1_cut$patientcode )
-all_patient_grade1 = lapply(ind_patients,function(x){x[, patient_mean := mean(ncells), by=cluster]})
-library("entropy")
-kldiv <- lapply(all_patient_grade1, function(x){KL.plugin(x$patient_mean, x$overall_mean)})
-sum_kldiv <- lapply(kldiv,function(x){Reduce("+",x)})
-length_kldiv <- lapply(kldiv,function(x){length(x)})
-mean_kldiv_mat_grade1 <- unlist(t(sum_kldiv))/unlist(t(length_kldiv))
-grade1KL = cbind(data.frame(names(kldiv)),data.frame(mean_kldiv_mat_grade1))
-names(grade1KL) = c('patientcode','KLdiv')
-grade1KL$grade = factor('1')
-
-#Grade2
-grade2_cut[,overall_mean := mean(ncells), by = cluster]
-ind_patients <- split( grade2_cut , f = grade2_cut$patientcode )
-all_patient_grade2 = lapply(ind_patients,function(x){x[, patient_mean := mean(ncells), by=cluster]})
-library("entropy")
-kldiv <- lapply(all_patient_grade2, function(x){KL.plugin(x$patient_mean, x$overall_mean)})
-sum_kldiv <- lapply(kldiv,function(x){Reduce("+",x)})
-length_kldiv <- lapply(kldiv,function(x){length(x)})
-mean_kldiv_mat_grade2 <- unlist(t(sum_kldiv))/unlist(t(length_kldiv))
-grade2KL = cbind(data.frame(names(kldiv)),data.frame(mean_kldiv_mat_grade2))
-names(grade2KL) = c('patientcode','KLdiv')
-grade2KL$grade = factor('2')
-
-#Grade3
-grade3_cut[,overall_mean := mean(ncells), by = cluster]
-ind_patients <- split( grade3_cut , f = grade3_cut$patientcode )
-all_patient_grade3 = lapply(ind_patients,function(x){x[, patient_mean := mean(ncells), by=cluster]})
-library("entropy")
-kldiv <- lapply(all_patient_grade3, function(x){KL.plugin(x$patient_mean, x$overall_mean)})
-sum_kldiv <- lapply(kldiv,function(x){Reduce("+",x)})
-length_kldiv <- lapply(kldiv,function(x){length(x)})
-mean_kldiv_mat_grade3 <- unlist(t(sum_kldiv))/unlist(t(length_kldiv))
-grade3KL = cbind(data.frame(names(kldiv)),data.frame(mean_kldiv_mat_grade3))
-names(grade3KL) = c('patientcode','KLdiv')
-grade3KL$grade = factor('3')
-
-
-all_grades_kl = rbind(normalKL,grade1KL,grade2KL,grade3KL)
-
-grades_kl = merge(cluster_dat,all_grades_kl, by = c('patientcode','grade'))
-grades_kl_cut = grades_kl[,c('patientcode','grade','KLdiv')]
-grades_kl_cut = unique(grades_kl_cut)
-grades_kl_cut$grade = factor(grades_kl_cut$grade, level = c('NORMAL','1','2','3'))
-names(grades_kl_cut)[3] = 'KLdiv_interPatient'
-
-p <- ggplot(grades_kl_cut,aes(as.factor(grade),KLdiv_interPatient))+
-geom_boxplot()
-pdf(file="/home/jana/Desktop/R_dat/KLinterPatient_grade_normalized.pdf", width=10, height=10)
-p
-dev.off()
-
-
-# T-test grade1 vs grade3
-y = 0
-y[grades_kl_cut$grade == 'NORMAL'] = 1
-y[grades_kl_cut$grade == '3'] = 0
-y = y[!grades_kl_cut$grade %in% c('1',"2")]
-x = grades_kl_cut$KLdiv_interPatient[!grades_kl_cut$grade %in% c('1',"2")]
-t.test(x~as.factor(y))
-
-
-
-
-
-
-
-```
-
-```{r}
-
-normal = subset(cluster_dat, grade %in% 'NORMAL')
-grades = subset(cluster_dat, grade %in% c(1,2,3))
-
-
-normal_cut <- normal[,c("core","cluster","ncells","patientcode")]
-grades_cut <- grades[,c("core","cluster","ncells","patientcode")]
-
-#Normal
-normal_cut[,overall_mean := mean(ncells), by = cluster]
-normal_cut = normal_cut[,c('cluster','patientcode','overall_mean')]
-grades_cut = grades_cut[,c('cluster','patientcode','ncells')]
-
-
-both = merge(grades_cut,normal_cut, by = c('patientcode','cluster'))
-ind_patients <- split( both , f = both$patientcode )
-
-
-kldiv <- lapply(ind_patients, function(x){KL.plugin(x$ncells, x$overall_mean)})
-
-names_patients = names(kldiv)
-to_normal_kldiv = unlist(kldiv)
-kl_to_norm = cbind(data.frame(names_patients),data.frame(to_normal_kldiv))
-colnames(kl_to_norm) = c('patientcode','KLdiv_to_average_Normal')
-rownames(kl_to_norm) = NULL
-
-to_normal_kl = merge(cluster_dat,kl_to_norm, by = c('patientcode'))
-
-
-survival_kl_cut = to_normal_kl[,c('patientcode','OSmonth','KLdiv_to_average_Normal')]
-survival_kl_cut = unique(survival_kl_cut)
-
-
-p <- ggplot(survival_kl_cut,aes(OSmonth,KLdiv_to_average_Normal))+
-geom_point()+
-  geom_smooth(method=lm)
-pdf(file="/home/jana/Desktop/R_dat/KLinterPatient_vs_survuval.pdf", width=10, height=10)
-p
-dev.off()
-
-
-shannon_patients = lapply(ind_patients, function(y){entropy.ChaoShen(y$ncells)})
-names_patients = names(shannon_patients)
-to_normal_shannon = unlist(shannon_patients)
-shannon_to_norm = cbind(data.frame(names_patients),data.frame(to_normal_shannon))
-colnames(shannon_to_norm) = c('patientcode','shannon')
-rownames(shannon_to_norm) = NULL
-
-to_normal_shannon = merge(cluster_dat,shannon_to_norm, by = c('patientcode'))
-
-
-survival_shannon_cut = to_normal_shannon[,c('patientcode','OSmonth','shannon')]
-survival_shannon_cut = unique(survival_shannon_cut)
-
-p <- ggplot(survival_shannon_cut,aes(OSmonth,shannon))+
-geom_point()+
-  geom_smooth(method=lm)
-
-
-
-```
-
 
 
 
