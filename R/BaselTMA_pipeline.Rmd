@@ -1882,7 +1882,7 @@ nodules_wide = cbind( nodules_wide[,c('Community','core')],apply(nodules_wide[,-
 #Run PhenoGraph
 rand_seed = 3
 rpheno_out = cytofkit::Rphenograph(nodules_wide[,-c('Community','core')], k = 80, seed = rand_seed,approx = T)
-nodules_wide$cluster = rpheno_out$membership
+nodules_wide$cluster = igraph::membership(rpheno_out)
 
 ##Save out PG results
 #fwrite(nodules_wide[,c('core','Community','cluster')],'PG_basel_epi_final.csv',col.names = T)
@@ -1991,7 +1991,7 @@ tsne_comm <- Rtsne.multicore::Rtsne.multicore(dat_tsne[,-c('Community','core','c
             verbose = T, dims = 2, num_threads = 10)
   
 #Write out tSNE results
-#fwrite(tsne_comm$Y,'tsne_basel_epi.csv',col.names = F)
+#fwrite(cbind(dat_tsne,tsne_comm$Y),'tsne_basel_epi.csv',col.names = F)
 
 #Read in saved tsne run from publication
 tsne_comm = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/Communities/tsne_tumor_communities.csv')
@@ -2082,12 +2082,8 @@ nodules_long = melt.data.table(nodules_wide_not_norm, id.vars = c('Community','c
 
 summary_dat = nodules_long[ ,list(
   mean_val= mean(perc_cluster),
-  #std_val = std(perc_cluster),
   cell_cluster=.N),
   by=.(channel,cluster)]
-
-hm_dat = dcast.data.table(data =summary_dat, formula = 'cluster ~ channel',
-                          value.var = 'mean_val') #can be exchanged for 'median_val'
 
 #Bars ordered according to heatmap (above)
 d = unique(summary_dat[,c('channel','cluster','mean_val')])
@@ -2265,7 +2261,7 @@ nodules_wide = cbind( nodules_wide[,c('Community','core')],apply(nodules_wide[,-
 #PG for identifying different structures
 rand_seed = 3
 rpheno_out = cytofkit::Rphenograph(nodules_wide[,-c('Community','core')], k = 30, seed = rand_seed,approx = T)
-nodules_wide$cluster = rpheno_out$membership
+nodules_wide$cluster = igraph::membership(rpheno_out)
 
 #Write out PG result
 #fwrite(nodules_wide[,c('Community','cluster')],'PG_basel_stroma_final.csv',col.names = T)

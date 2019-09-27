@@ -459,7 +459,7 @@ cluster_dat_tumors <- cluster_dat_tumors[!cluster_dat_tumors$location == '[]',]
 
 #Map metacluster labels (machted from Basel cohort) because from now on only using metacluster cell types 
 cluster_dat_tumors_orig = cluster_dat_tumors
-cluster_dat_tumors$cluster <- mapvalues(cluster_dat_tumors$cluster, from=cluster_match$zuri, to=cluster_match$Basel
+cluster_dat_tumors$cluster <- mapvalues(cluster_dat_tumors$cluster, from=cluster_match$zuri, to=cluster_match$Basel)
 
 ```
 
@@ -522,9 +522,6 @@ cluster_dat_tumors[, frac_cells_cell_Area_image := ncells/tot_cell_area_image, b
 cluster_dat_tumors[, tot_cell_area_location := sum(unique(sum_area_cells)), by=location]
 cluster_dat_tumors[, tot_image_area_location := sum(unique(area)), by=location]
 cluster_dat_tumors[, cluster_by_area := ncells/area, by=c('core','cluster')]
-# order_orig = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/order_orig.csv')
-# cluster_dat_tumors = cluster_dat_tumors[order(match(core,order_orig$V1))]
-# cluster_dat_tumors$PID = as.character(cluster_dat_tumors$PID)
 
 patient_dat_vars <- cluster_dat_tumors[,c("PID","cluster","frac_cluster")] #replace frac with other norms
 un_clusters <- unique(patient_dat_vars[,"cluster"])
@@ -608,69 +605,6 @@ names(SCP_match) = c('core','patient_pheno')
 
 ```
 
-#Image clustering with stacked barplot, change grade to PID
-```{r}
-image_order <- unique(cluster_dat$core)[hc_image$order]
-#Reorder the levels of legend
-cluster_dat$cluster <- factor(cluster_dat$cluster,levels = cluster_order)
-patient_im_orig = cluster_dat[,c('core','grade')]
-patient_im_orig = unique(patient_im_orig)
-#For bar
-core_location <- cluster_dat[,c('core','location')]
-core_location  <- unique(core_location)
-location_order <- core_location[order(match(core_location$core,image_order))]
-all_order = patient_im_orig[order(match(patient_im_orig$core,image_order))]
-cluster_dat$cluster = factor(cluster_dat$cluster, levels = cluster_order)
-
-p <- ggplot(cluster_dat, aes(x=core, y=cluster_by_area,  fill=cluster)) + 
-  geom_bar(stat='identity')+
-  scale_fill_manual("Clusters",values = rev(mycols))+
-  scale_x_discrete(limits = all_order$core)+
-  #facet_wrap(core~)+
-  labs(fill = "Clusters")+
-  coord_flip()+
-  xlab("Patient images")+
-  ylab("Percentage of cluster cells in image")+
-  theme(panel.background = element_blank(),
-    axis.text.y = element_text(colour=c('green','blue','red','lightblue','black')[factor(all_order$grade, levels = c('1','2','3','NORMAL','METASTASIS'))]))+
-  ggtitle('Patient composition')
-
-library("ggdendro")
-p2 <- ggdendrogram(hc_image, rotate = TRUE,labels = FALSE, theme_dendro = TRUE, leaf_labels = FALSE)+
-  theme(axis.title.x=element_blank(),
-          axis.text.x=element_blank(),
-          axis.ticks.x=element_blank(),
-          axis.title.y=element_blank(),
-          axis.text.y=element_blank(),
-          axis.ticks.y=element_blank())
-
-#Location
-location_order$location = factor(location_order$location, levels = c('CENTER','PERIPHERY','NORMAL','METASTASIS'))
-p3 <- ggplot(location_order, aes(x=1,y=c(1:length(location_order$location))))+
-      geom_tile(aes( fill=location))+
-  scale_fill_manual(values = c('red','blue','lightblue','black'))+
-    theme(axis.title.x=element_blank(),
-          axis.text.x=element_blank(),
-          axis.ticks.x=element_blank(),
-          axis.title.y=element_blank(),
-          axis.text.y=element_blank(),
-          axis.ticks.y=element_blank(),
-          line = element_blank(),
-          legend.position="none")
-
-library("cowplot")
-p4 <- ggdraw() +
-     draw_plot(p2 + scale_y_reverse(), 0, 0.001, 0.43, 0.995) +
-     draw_plot(p ,0.49, 0.04, 0.5, 0.915)+
-     draw_plot(p3,0.45,0,0.047,0.998)
-
-
-pdf(file="Image_clustering_zuri.pdf", width=40, height=100)
-p4
-dev.off()
-
-```
-
 #Compute KL divergence between tumor cell type distributions of the individual core and the patient average 
 ```{r}
 #KL divergence per patient
@@ -732,7 +666,7 @@ p <- ggplot(kldiv_ordered, aes(x=factor(patient_pheno), y=kldiv)) +
   theme(panel.background = element_blank())+
   ggtitle('Cores assigned to patient group')
 
-pdf('/home/jana/Desktop/R_dat/CoreKLdiv_to_patientMean_perAssignedPatientgroup.pdf')
+pdf('boxplots_KLdiv_SCP.pdf')
 p
 dev.off()
 
@@ -742,7 +676,6 @@ dev.off()
 ```{r}
 #Prepare
 cluster_dat_tumors_stroma = cluster_dat_tumors_stroma[!location %in% c("NORMAL","METASTASIS"),]
-cluster_dat_ordered_by_patient = cluster_dat_tumors_stroma[by=PID]
 image_order = cluster_dat_ordered_by_patient[,c('PID','core')]
 image_order = unique(image_order)
 un_patients = unique(image_order$PID)
@@ -874,17 +807,384 @@ p7 <- ggplot(all_shannon_order, aes(x=1,y=c(1:length(all_shannon_order$shannon))
 
 #Plot everything next to each other
 p6 <- ggdraw() +
-     draw_plot(p2 + scale_y_reverse(), 0, 0.005, 0.36, 0.984) +
+     #draw_plot(p2 + scale_y_reverse(), 0, 0.005, 0.36, 0.984) +
      draw_plot(p ,0.47, 0.035, 0.5, 0.926)+
    draw_plot(p3,0.45,0,0.05,1)+
   draw_plot(p4,0.42,0,0.05,1)+
   draw_plot(p7,0.39,0,0.05,1)+
   draw_plot(p5,0.36,0,0.05,1)
 
-pdf(file="/home/jana/Desktop/R_dat/Image_KLdivs_perc_cluster.pdf", width=15, height=50)
+pdf(file="sbp.pdf", width=15, height=50)
 p6
 dev.off()
 
+
+```
+
+#Read in fragmentation (Cohesiveness) scores output by Matlab scipt (based on community detection results on topologic neighborhood graph)
+```{r}
+frag = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/Communities/fragmentation_scores.csv',header = T)
+
+##Adjust naming to be consistent with names here in R pipeline (only necessary when loading from histoCAT/Matlab scripts for the first time, provided data already contains cleaned names)
+# test = unique(frag$core)
+# split_core = strsplit(frag$core,'_', fixed = TRUE)
+# frag$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
+# #Replace the ones that don't need acquisition number again
+# short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
+# duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
+# in_cores_index = unlist(lapply(unique(frag$core)[duplicate_idx],function(x){which(frag$core %in% x)}))
+# frag$core[setdiff(1:length(frag$core),in_cores_index)] = unlist(lapply(strsplit(frag$core[setdiff(1:length(frag$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
+# #Delete zeros from core names
+# frag$core = unlist(lapply(frag$core,function(x){gsub("000","",x)}))
+
+#Calculate fragmentation score
+frag[,frag_log := log(frag)]
+frag[,frag_score := ((frag_log - min(frag_log))/(max(frag_log) - min(frag_log)))]
+
+#Set not present images NA and order according to stacked barplot above
+missing = all_order$core[!all_order$core %in% frag$core]
+frag = rbind(frag,data.frame(core = missing,frag_score = rep(NA,length(missing)),frag = rep(NA,length(missing)),frag_log = rep(NA,length(missing))))
+frag = frag[(core %in% all_order$core),]
+frag = unique(frag[,c('core','frag_score')])
+frag =  frag[order(match(frag$core,all_order$core))]
+
+#Fragmentation colorbar
+p7 <- ggplot(frag, aes(x=1,y=c(1:length(frag$frag_score))))+
+      geom_tile(aes( fill=frag$frag_score))+
+  scale_fill_gradient2(low = "blue", mid = "white", high = "purple")+
+    theme(axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          axis.title.y=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks.y=element_blank(),
+          line = element_blank(),
+          legend.position="none")
+
+p6 <- ggdraw() +
+     #draw_plot(p2 + scale_y_reverse(), 0, 0.005, 0.36, 0.984) +
+     draw_plot(p ,0.47, 0.035, 0.5, 0.926)+
+   draw_plot(p3,0.45,0,0.05,1)+
+  draw_plot(p7,0.39,0,0.05,1)
+
+pdf(file="fragmentationscore_zurich.pdf", width=30, height=50)
+p6
+dev.off()
+
+```
+
+
+#Read in tumor community data from Matlab (topological single-cell communities were extracted using the Matlab wrapper of the C++ Louvain implementation) including only tumor cells
+```{r}
+
+nodules = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/Communities/Community_data_tumor.csv',header = T)
+
+##This part is only necessary when loading data output by Matlab scripts with histoCAT naming structure for the first time (provided data is already cleaned)
+# #Exclude weak stains
+# nodules = nodules[!str_detect(nodules$core,regex('Ay.x1')),]
+# nodules = nodules[!str_detect(nodules$core,regex('Ay..x1')),]
+# nodules = nodules[!str_detect(nodules$core,'control'),]
+# nodules = nodules[!str_detect(nodules$core,'non-breast'),]
+# 
+# #Clean naming
+# test = unique(nodules$core)
+# split_core = strsplit(nodules$core,'_', fixed = TRUE)
+# nodules$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
+# #Replace the ones that don't need acquisition number again
+# short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
+# duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
+# in_cores_index = unlist(lapply(unique(nodules$core)[duplicate_idx],function(x){which(nodules$core %in% x)}))
+# nodules$core[setdiff(1:length(nodules$core),in_cores_index)] = unlist(lapply(strsplit(nodules$core[setdiff(1:length(nodules$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
+# #Delete zeros from core names
+# nodules$core = unlist(lapply(nodules$core,function(x){gsub("000","",x)}))
+
+
+#Replace PG cluster ids with metacluster id's matched from the BaselTMA
+nodules$Pheno = mapvalues(nodules$Pheno, from=cluster_match$zuri, to=cluster_match$Basel)
+
+#Threshold for only communities of at least a certain size
+nodules[,size_comm := .N, by = c('Community','core')]
+nodules = nodules[size_comm > 9,]
+
+#Calculate number of cells from each metacluster per community (community numbers are only unique per core)
+colnames(nodules)[colnames(nodules) == 'Pheno'] = 'metacluster'
+nodules[,ncells := .N , by = c('Community','metacluster','core')]
+nodules[,perc_cluster := ncells/size_comm, by = c('Community','core')]
+
+#Keep as separate variables for later
+save_size = unique(nodules[,c('core','Community','size_comm')])
+nodules_orig = nodules
+
+#Set missing cells types to 0
+nodules <- unique(nodules[,c("core","metacluster","ncells","Community")]) 
+nodules$Pheno = factor(nodules$Pheno, levels = sort(unique(nodules$Pheno)))
+nodules_wide = dcast.data.table(nodules,formula = 'Community + core ~ metacluster',value.var = 'ncells',fill = 0) #user perc_cluster for mixed nodules
+nodules_wide_not_norm = nodules_wide
+
+```
+
+#PG cluster tumor communtities
+```{r}
+
+#01-normalize absolute metacluster cell numbers of each community per metacluster
+nodules_wide = cbind( nodules_wide[,c('Community','core')],apply(nodules_wide[,-c('Community','core')],2, function(x){(x-min(x))/(max(x)-min(x))}))
+
+#Run PhenoGraph
+rand_seed = 3
+rpheno_out = cytofkit::Rphenograph(nodules_wide[,-c('Community','core')], k = 80, seed = rand_seed,approx = T)
+nodules_wide$cluster = igraph::membership(rpheno_out)
+
+##Save out PG results
+#fwrite(nodules_wide[,c('Community','cluster','core')],'PG_epi_zuri.csv',col.names = T)
+
+#Read in previous PG result from publication
+cl_dat = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/Communities/PG_tumor_communities.csv',header = T) 
+nodules_wide = merge(nodules_wide,cl_dat,by = c('Community','core'))
+
+```
+
+#Heatmap of metacluster content of each tumor community type
+```{r}
+nodules_long = melt.data.table(nodules_wide, id.vars = c('Community','cluster','core') ,variable.name = 'channel', value.name = 'perc_cluster')
+summary_dat = nodules_long[ ,list(
+  mean_val= mean(perc_cluster),
+  #std_val = std(perc_cluster),
+  cell_cluster=.N),
+  by=.(channel,cluster)]
+hm_dat = dcast.data.table(data =summary_dat, formula = 'cluster ~ channel',
+                          value.var = 'mean_val') #can be exchanged for 'median_val'
+
+#Convert to matrix
+trownames = hm_dat$cluster
+hm_dat = as.matrix(hm_dat[,-1,with=F])
+row.names(hm_dat) = trownames
+
+# Set color map
+cols = rev(brewer.pal(11,'Spectral'))
+cmap = colorRampPalette(cols)
+
+# Hierarchical clustering on rows with Ward's linkage
+tdist = as.dist(1-cor(t(hm_dat), method="spearman"))
+hr <- hclust(tdist, method="ward.D2")
+co_r <- order.optimal(tdist, hr$merge)
+hr$merge = co_r$merge
+hr$order = co_r$order
+
+# Order rows in heatmap according to clustering
+order_heatmap_zscored = row.names(hm_dat)[hr$order]
+
+# Hierarchical clustering on columns with Ward's linkage
+tdist = as.dist(1-cor((hm_dat), method="spearman"))
+hc <- hclust(tdist, method="ward.D2")
+co_c <- order.optimal(tdist, hc$merge)
+hc$merge = co_c$merge
+hc$order = co_c$order
+
+# Z-score data
+p_dat = scale(hm_dat)
+
+# Censor z-score at 2
+p_dat[p_dat > 2] =2
+p_dat[p_dat < -2] =-2
+
+
+pdf(file="tumor_community_heatmap_k80.pdf", width=10, height=10)
+
+heatmap.2(p_dat,
+          scale ='none',
+          trace = "none",
+          col=cmap(75),
+          Rowv=as.dendrogram(hr),
+          Colv=as.dendrogram(hc),
+          density.info ='none',
+          cexRow=0.6,
+          cexCol=0.6,
+          margins=c(4,8),
+          xlab = 'Markers',
+          ylab ='Cluster',
+          main = 'PG_norm_slide',
+          colCol = c(mycols_basel_meta[14:27],'black'),
+          colRow = col_vector) #mycols_basel for small clusters
+
+dev.off()
+
+
+```
+
+
+#tSNE of communities based on metacluster cell content
+```{r}
+#Remove duplicates
+dat_tsne = nodules_wide[!duplicated(nodules_wide[,-c('Community','core','cluster')])]
+
+#Run tSNE
+require(doParallel)
+cores = 10
+options('mc.cores' = cores)
+registerDoParallel(cores)
+tsne_comm <- Rtsne.multicore::Rtsne.multicore(dat_tsne[,-c('Community','core','cluster')],
+            verbose = T, dims = 2, num_threads = 10)
+
+#fwrite(cbind(dat_tsne,tsne_comm$Y),'tsne_epi_zuri.csv',col.names = F)
+
+#Read in saved tsne run from publication
+tsne_comm = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/Communities/tsne_tumor_communities.csv') #tsne_comm.csv
+
+#SCP patient groups on community tsne
+dat_tsne = merge(dat_tsne,tsne_comm, by = c('Community','core'))
+dat_tsne = merge(unique(Sample_metadata[,c('core','PID')]),dat_tsne,by = 'core')
+dat_tsne = merge(dat_tsne,SCP_match,by = 'core')
+dat_tsne$patient_pheno = as.factor(dat_tsne$patient_pheno)
+
+#Plot
+p = dat_tsne%>%
+  ggplot(aes(x=V1, y=V2))+
+  geom_point(size=1, alpha=0.8, aes(color=patient_pheno))+
+  labs(colour="Patients")+
+  scale_color_manual(values = mycols_patient[sort(as.numeric(levels(dat_tsne$patient_pheno)))])+
+  ggtitle('Phenograph')+
+  guides(color=guide_legend(override.aes=list(size=5)))+
+  theme(strip.background = element_blank(),
+        panel.background=element_rect(fill='white', colour = 'black'),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank(),
+        legend.key = element_blank())
+
+pdf('tsne_communities_colorPatientgroup.pdf',width = 10,height = 10)
+p
+dev.off()
+
+
+#Community type clusters on tsne
+dat_tsne$cluster = factor(dat_tsne$cluster,levels = hr$labels[hr$order])
+p = dat_tsne%>%
+  ggplot(aes(x=V1, y=V2))+
+  geom_point(size=1, alpha=0.8, aes(color=cluster))+
+  labs(colour="Patients")+
+  scale_color_manual(values = col_vector[as.numeric(hr$labels[hr$order])])+
+  ggtitle('Phenograph')+
+  guides(color=guide_legend(override.aes=list(size=5)))+
+  theme(strip.background = element_blank(),
+        panel.background=element_rect(fill='white', colour = 'black'),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank(),
+        legend.key = element_blank())
+
+pdf('tsne_epithelial_communities_colorPG.pdf',width = 10,height = 10)
+p
+dev.off()
+```
+
+#Stacked bars showing absolute numbers of cells of each metacluster per community type
+```{r}
+#Use not normalized data to see absolute cell numbers
+cl_dat = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/Communities/PG_tumor_communities.csv',header = T)
+nodules_wide_not_norm = merge(nodules_wide_not_norm,cl_dat,by = c('Community','core'))
+nodules_long = melt.data.table(nodules_wide_not_norm, id.vars = c('Community','cluster','core') ,variable.name = 'channel', value.name = 'perc_cluster')
+
+summary_dat = nodules_long[ ,list(
+  mean_val= mean(perc_cluster),
+  cell_cluster=.N),
+  by=.(channel,cluster)]
+
+#Bars ordered according to heatmap (above)
+d = unique(summary_dat[,c('channel','cluster','mean_val')])
+p <- ggplot(d, aes(x=factor(cluster,levels = hr$labels[hr$order]), y=mean_val, fill=factor(channel))) + #hr$labels[hr$order]
+  geom_bar(stat='identity',show.legend = TRUE)+
+  scale_fill_manual("Clusters",values =  c(mycols_basel_meta[14:27],'black'))+ 
+  labs(fill = "Clusters")+
+  coord_flip()+
+  xlab("Patient")+
+  ylab("Percentage of cluster cells in patient")+
+  theme(panel.background = element_blank(),
+        axis.text.y = element_text(colour=col_vector[as.numeric(hr$labels[hr$order])]))+ 
+  ggtitle('Patient composition')
+
+pdf('comm_cluster_compositions.pdf',width = 10,height = 10)
+p
+dev.off()
+```
+
+#Clustered heatmaps of community type make up of each patient
+```{r}
+
+#Automatically clustered on rows and columns based on community type content of cores
+nodules_wide = merge(unique(Sample_metadata[,c('core','PID')]),nodules_wide,by = 'core')
+nodules_wide = merge(nodules_wide,SCP_match,by = 'core')
+nodules_wide$patient_pheno = as.factor(nodules_wide$patient_pheno)
+enrichment = unique(nodules_wide[,c('cluster','Community','core')])
+enrichment[,both := .N, by = c('cluster','core')]
+enrichment[,frac_patient := both/.N, by = c('core')]
+enrichment = unique(enrichment[,c('core','cluster','frac_patient')])
+d = dcast.data.table(enrichment,formula = 'core  ~ cluster',value.var = 'frac_patient',fill = 0)
+d_mat = as.matrix(d[,-'core'])
+rownames(d_mat) = d$patientcode
+d = merge(d, SCP_match,by = 'core')
+
+h = Heatmap(d_mat, name = "Clustergram", km = 1, col = colorRamp2(c(0, 1), c("white", "red")),
+     show_row_names = T, show_column_names =  T, clustering_method_rows = "ward.D2",clustering_method_columns = "ward.D2")+
+
+Heatmap(factor(d$patient_pheno), name = "Patientgroups", show_row_names = FALSE, width = unit(10, "mm"), col = structure(mycols_patient, names = c(as.character(1:18))))
+
+pdf('levels_epithelial_communities_patientgroup_colors.pdf',width = 10, height = 20)
+h
+dev.off()
+
+
+#Group by patient and ordered according to stacked barplot (above)
+missing = all_order$core[!all_order$core %in% d$core]
+d = d[,-'patient_pheno']
+add =  matrix(data=0,nrow=length(missing),ncol=ncol(d)-1)
+add = as.data.table(add)
+add$core = missing
+colnames(add) = c('1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','core')
+d = rbind(d,add)
+d = merge(d,Sample_metadata[,c('core','PID')],by = 'core')
+d = merge(d, SCP_match,by = 'core')
+d = d[order(match(d$core,rev(all_order$core))),]
+
+d_mat = as.matrix(d[,-c('core','patient_pheno','PID')])
+rownames(d_mat) = d$core
+h = Heatmap(d_mat, name = "Clustergram", km = 1, col = colorRamp2(c(0, 1), c("white", "red")),
+     show_row_names = T, show_column_names =  T,cluster_rows = FALSE,clustering_method_columns = "ward.D2")+
+  Heatmap(factor(d$patient_pheno), name = "SCP", show_row_names = FALSE, width = unit(10, "mm"), col = structure(mycols_patient, names = c(as.character(1:18))))+
+  Heatmap(factor(d$PID), name = "Patient", show_row_names = FALSE, width = unit(10, "mm"), col = structure(c(col_vector,'black'), names = c(unique(d$PID))))
+
+pdf('levels_ordered_patient.pdf',width = 10, height = 20)
+h
+dev.off()
+
+#Save column order to potentially order other plots accordingly (e.g. stacked bareplot displaying absolute cell type numbers in each community type)
+o_epi = column_order(h)
+
+```
+
+#Center or periphery core location of community types
+```{r}
+nodules_wide = merge(unique(Sample_metadata[,c('core','PID','location')]),nodules_wide,by = c('core','PID'))
+cluster_loc = nodules_wide[,c('cluster','core','Community','location')]
+cluster_loc = cluster_loc[!location %in% c('NORMAL','METASTASIS','[]'),]
+cluster_loc[,count := .N, by = c('cluster','location')]
+cluster_loc[,frac_cluster := count/.N, by = 'cluster']
+cluster_loc[,frac_location := count/.N, by = 'location']
+cluster_loc = unique(cluster_loc[,c('cluster','location','frac_cluster')])
+
+p <- ggplot(cluster_loc, aes(x=factor(cluster,levels = hr$labels[hr$order]), y=frac_cluster, fill=factor(location,levels = c('CENTER','PERIPHERY','NORMAL','METASTASIS')))) + 
+  geom_bar(stat='identity',show.legend = TRUE)+
+  scale_fill_manual("Clusters",values = c('red','blue','grey','black'))+ # rev(mycols)[!cluster_order %in% c(1,3:5,7:8,11,13,22,25:26,33:34)]
+  labs(fill = "Location")+
+  coord_flip()+
+  xlab("loc")+
+  ylab("Frac cluster")+
+  theme(panel.background = element_blank(),
+        axis.text.y = element_text(colour=col_vector[as.numeric(hr$labels[hr$order])]))+
+  ggtitle('Location composition')
+
+pdf('zurich_community_location.pdf',width = 10, height = 20)
+p
+dev.off()
 
 ```
 
