@@ -55,14 +55,6 @@ col_vector = unique(col_vector)
 
 #Define custom colormap with colors according to cell types as used in pulication
 ```{r Generate a color pallette for plotting}
-#colors matched to most similar cell type from Basel TMA (see alignment bellow)
-mycols =c("darkolivegreen","darkolivegreen","darkolivegreen1","green3","cadetblue1","darkslategray1","darkslategray1","yellow","turquoise1","turquoise1","lightskyblue","lightpink","dodgerblue4","blue","blue","aquamarine","aquamarine","aquamarine","aquamarine4","brown1","firebrick","purple4","purple4","purple4","purple4","purple4","darkorchid","darkorchid","darkorchid","salmon","chocolate","chocolate","chocolate","chocolate","orange2","deeppink1","deeppink1","deeppink1","deeppink1","tan4")
-
-#Write out color map for use in other software (e.g. highlight cells in corresponding colors in histoCAT)
-RGB = t(col2rgb(mycols[order(rev(as.numeric(cluster_order)))])) #in histoCAT clusters are ordered sequentially according to their cluster number
-RGB_norm = (RGB - min(RGB))/(max(RGB) - min(RGB)) 
-fwrite(data.table(RGB_norm), file='/home/jana/Desktop/R_dat/RGB_basel_meta.csv', col.names = TRUE)
-hex = rgb(RGB_norm)
 
 #Metacluster colors from Basel TMA
 mycols_basel_meta <- colors()[c(258,257,86,85,259,81, #green
@@ -301,7 +293,7 @@ for (i in unique(dat[channel %in% good_channels,]$channel)){
       geom_vline(data=cdat, aes(xintercept=markermean,  colour=cluster),
                  linetype="dashed", size=1)+
       facet_wrap( ~ cluster, ncol=1)+
-    scale_color_manual(values = rev(mycols)))
+    scale_color_manual(values = rev(cols_corresp_basel)))
   dev.off()}
 ```
 
@@ -309,7 +301,7 @@ Reproduce clustergram from neighborhood analysis in R with some adaptations
 ```{r}
 
 #Read in data from histoCAT neighborhood analysis where stromal/immune/Endothelial Metaclusters are separate but all tumor cells have the same label (100)
-clustergram_dat = read.csv('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/neighborhood_output/Clustergram_Zurich.csv',header = T,row.names = 1)
+clustergram_dat = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/neighborhood_output/Clustergram_Zurich.csv',header = T)
 
 ##Adapt names to be consistent with naming here, only necessary first time when importing from neighborhood run in histoCAT (provided neighborhood output is already cleaned)
 # rnames = rownames(clustergram_dat)
@@ -492,13 +484,13 @@ cluster_loc = unique(cluster_loc[,c('cluster','location','frac_cluster')])
 
 p <- ggplot(cluster_loc, aes(x=cluster, y=frac_cluster, fill=factor(location,levels = c('CENTER','PERIPHERY','NORMAL','METASTASIS')))) + 
   geom_bar(stat='identity',show.legend = TRUE)+
-  scale_fill_manual("Clusters",values = c('red','blue','grey','black'))+ # rev(mycols)[!cluster_order %in% c(1,3:5,7:8,11,13,22,25:26,33:34)]
+  scale_fill_manual("Clusters",values = c('red','blue','grey','black'))+ 
   labs(fill = "Location")+
   coord_flip()+
   xlab("loc")+
   ylab("Frac cluster")+
   theme(panel.background = element_blank(),
-        axis.text.y = element_text(colour=rev(mycols)))+
+        axis.text.y = element_text(colour=rev(cols_corresp_basel)))+
   ggtitle('Location composition')
 
 pdf('location.pdf')
@@ -538,6 +530,54 @@ patient_wide$PID = as.character(patient_wide$PID)
 
 dd <- dist(scale(patient_wide[,2:ncol(patient_wide)]), method = "euclidean")
 hc <- hclust(dd, method = "ward.D2")
+
+#With original clusters for comparison
+patient_dat_vars <- cluster_dat_tumors_orig[,c("PID","cluster","frac_cluster")]
+un_clusters <- unique(patient_dat_vars[,"cluster"])
+un_clusters <- transform(un_clusters, cluster = as.character(cluster))
+un_clusters <- unlist(un_clusters)
+colnames(patient_dat_vars)<-c("PID","channel","value")
+patient_wide_orig = dcast.data.table(data =patient_dat_vars, formula = 'PID ~ channel',
+                          value.var = 'value',fun.aggregate = mean, fill = 0)
+
+```
+
+#Asign whole patient based on all images from Zurich TMA to most similar SCP patient group from Basel TMA based on tumor cell type proportions
+```{r}
+#Read in patient cell type composition from Basel TMA
+basel_patients = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/output_BaselTMA/patient_wide_basel.csv',header = T)
+meta_patient_clustering = fread(file='/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/output_BaselTMA/SCP_patientgroups.csv', header = TRUE)
+
+#Aggregate into mean cell type composition per SCP patient group
+basel = merge(basel_patients,meta_patient_clustering, by = 'PID',all.x = T)
+basel$patient_pheno[is.na(basel$patient_pheno)] = 18
+group_means = lapply(unique(basel$patient_pheno),function(x){colMeans(basel[patient_pheno == x,-c('PID','patient_pheno')])})
+group_means_t = data.table(matrix(unlist(group_means), ncol = length(group_means[[1]]), byrow = TRUE))
+group_means_t$patient_pheno = unique(basel$patient_pheno)
+names(group_means_t) = c(names(group_means[[1]]),'patient_pheno')
+
+rnames = group_means_t$patient_pheno
+basel_mat = as.matrix(group_means_t[,-'patient_pheno'])
+rownames(basel_mat) = rnames
+
+#Sum over original clusters to get metacluster measurement per image
+rnames = patient_wide_orig$PID
+colnames(patient_wide_orig) <- mapvalues(colnames(patient_wide_orig), from=cluster_match$zuri, to=cluster_match$Basel)
+zuri_patients_sum = data.table(t(rowsum(t(patient_wide_orig[,-'PID']), group = colnames(patient_wide_orig[,-'PID']), na.rm = T)))
+zuri_patients_sum$core = rnames
+zuri_mat = as.matrix(zuri_patients_sum[,-'PID'])
+rownames(zuri_mat) = rnames
+zuri_mat = zuri_mat[,colnames(basel_mat)]
+
+basel_mat = basel_mat[order(as.numeric(rownames(basel_mat))), ] 
+
+crosscor = cor(t(basel_mat),t(zuri_mat))
+idx_min = apply(crosscor,2,function(x){which(x == max(x))})
+dist_min = apply(crosscor,2,max)
+SCP_match_patient = data.table(names(unlist(idx_min)))
+colnames(SCP_match_patient) = 'zuri'
+SCP_match_patient$basel = idx_min
+names(SCP_match_patient) = c('PID','patient_pheno_patient')
 
 ```
 
@@ -675,7 +715,7 @@ dev.off()
 #Patients clustering with stacked barplot of individual images, tumor images only, grouped by patient (use data including stroma for visualization)
 ```{r}
 #Prepare
-cluster_dat_tumors_stroma = cluster_dat_tumors_stroma[!location %in% c("NORMAL","METASTASIS"),]
+cluster_dat_ordered_by_patient = cluster_dat_tumors_stroma[!location %in% c("NORMAL","METASTASIS"),]
 image_order = cluster_dat_ordered_by_patient[,c('PID','core')]
 image_order = unique(image_order)
 un_patients = unique(image_order$PID)
@@ -821,7 +861,7 @@ dev.off()
 
 ```
 
-#Read in fragmentation (Cohesiveness) scores output by Matlab scipt (based on community detection results on topologic neighborhood graph)
+#Read in fragmentation (cohesiveness) scores output by Matlab scipt (based on community detection results on topologic neighborhood graph)
 ```{r}
 frag = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/Communities/fragmentation_scores.csv',header = T)
 
@@ -869,6 +909,347 @@ p6 <- ggdraw() +
 
 pdf(file="fragmentationscore_zurich.pdf", width=30, height=50)
 p6
+dev.off()
+
+```
+
+#Regional heterogeneity across cores of the same patient (Figure 5)
+```{r}
+#Dot plot with patients on y and patient KL div on x, every dot represents one core of the patient and is colored according to its individually assigned SCP
+kldiv_ordered = data.table(names(unlist(kldiv)))
+kldiv_ordered$kldiv = as.vector(unlist(kldiv))
+names(kldiv_ordered)[1] = 'core'
+kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[2],collapse = '.')}))
+kldiv_ordered = merge(kldiv_ordered,SCP_match, by = 'core')
+kldiv_ordered = merge(kldiv_ordered,unique(Sample_metadata[,c('core','PID')]), by = 'core')
+kldiv_ordered[,patient_avg := mean(kldiv), by = 'PID']
+kldiv_ordered$PID = factor(kldiv_ordered$PID, levels = as.vector(as.matrix(unique(kldiv_ordered[order(patient_avg),'PID']))))
+
+
+p = ggplot(kldiv_ordered,aes(x = PID,y = kldiv,color = factor(patient_pheno)))+
+  geom_point(aes(size = 13))+
+  scale_color_manual(values = mycols_patient[sort(unique(kldiv_ordered$patient_pheno))])+
+  theme(axis.text.x = element_text(angle = 90))+
+   scale_size_continuous(range = c(0, 13))
+
+pdf('dot.pdf',height = 10,width = 15)
+p
+dev.off()
+
+#Bubble plot showing how often individual core SCP assignment agrees with whole patient SCP assignment
+SCP_match = merge(SCP_match,unique(Sample_metadata[,c('core','PID')]),by = 'core');
+SCP_match$PID = as.character(SCP_match$PID)
+co = merge(SCP_match_patient,SCP_match,by = 'PID')
+co$patient_pheno_patient = factor(co$patient_pheno_patient,levels = as.character(1:18))
+co$patient_pheno = factor(co$patient_pheno,levels = as.character(1:18))
+co[,nr := .N , by = c('patient_pheno_patient','patient_pheno')]
+co[,perc := nr/.N , by = c('patient_pheno_patient')]
+co[,perc_core := nr/.N, by = 'patient_pheno']
+
+pdf('/home/jana/Desktop/R_dat/sad_new_plot.pdf',width = 13)
+ggplot(co, aes(x = patient_pheno, y = patient_pheno_patient)) + 
+  geom_point(aes(size =perc,
+                 color = perc_core)) + 
+  scale_x_discrete(drop=FALSE)+
+  scale_y_discrete(drop=FALSE)+
+  #scale_color_manual(values = mycols_patient[unique(co$patient_pheno_patient)])+
+  scale_color_gradient(low="white", high="red",name = "Perc of cores assigned to x in patients assigned to y") +
+  scale_size(range = c(1, 15),name = "Of patient assigned to y, perc of images assigned to x") +
+  theme(axis.text.y=element_text(color = c(mycols_patient[as.numeric(levels(co$patient_pheno_patient))])))
+dev.off()
+
+
+#How many cores of the patients agree on same SCP
+co[,agree := patient_pheno == patient_pheno_patient]
+co[,nr_agree := sum(agree),by = 'PID']
+co[,perc_agree := nr_agree/.N ,by = 'PID']
+co[,perc_disagree := 1 - perc_agree]
+fr = unique(co[,c('PID','perc_disagree')])
+fr$perc_disagree = factor(fr$perc_disagree)
+fr[,nr := .N ,by = 'perc_disagree']
+fr[,perc := nr/.N]
+fr = unique(fr[,c('perc_disagree','perc')])
+
+bp<- ggplot(fr, aes(x="", y=perc, fill=factor(perc_disagree,levels = rev(levels(perc_disagree)))))+
+geom_bar(width = 1, stat = "identity")+
+  scale_fill_grey(end = 0,start = 0.8)+
+  #scale_fill_manual("Clusters",values =  c(mycols_basel_meta[1:13],'black'))+
+    theme(strip.background = element_blank(),
+        panel.background=element_rect(fill='white', colour = 'black'),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank(),
+        legend.key = element_blank())
+
+pdf('bar.pdf')
+bp
+dev.off()
+```
+
+#Boxplots of KL divergencies of individual cores to patient average per SEs and SCPs
+```{r}
+#SCPs
+
+#Take KL divergences calculated above
+kldiv_ordered = data.table(names(unlist(kldiv)))
+kldiv_ordered$kldiv = as.vector(unlist(kldiv))
+names(kldiv_ordered)[1] = 'core'
+kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[2],collapse = '.')}))
+kldiv_ordered = merge(kldiv_ordered,SCP_match, by = 'core')
+
+#Also for shannon entrpoies
+sh = merge(shannon_core,SCP_match)
+
+#Boxplot
+p <- ggplot(kldiv_ordered, aes(x=factor(patient_pheno), y=kldiv)) + #Exchange to sh for shannon entropy
+  geom_boxplot()+
+  geom_point(size=2, alpha=1)+
+  ylab("KL div to patient average of core")+
+  xlab("Patientgroup")+
+  theme(panel.background = element_blank())+
+  ggtitle('Cores assigned to patient group')
+
+pdf('CoreKLdiv_to_patientMean_perAssignedPatientgroup.pdf')
+p
+dev.off()
+
+
+
+#Stromal environments (if this should only include stromal cells, then adapt KL divergence calculation above to exclude tumor cells or assign them all the same label)
+
+#Take KL divergences calculated above
+kldiv_ordered = data.table(names(unlist(kldiv)))
+kldiv_ordered$kldiv = as.vector(unlist(kldiv))
+names(kldiv_ordered)[1] = 'core'
+kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[2],collapse = '.')}))
+kldiv_ordered = merge(kldiv_ordered,n_clusters_orig, by = 'core')
+kldiv_ordered$cluster = factor(kldiv_ordered$cluster,levels = c(2,1,6,4,10,5,8,11,3,7,9))
+
+#Also for shannon entrpoies
+sh = merge(shannon_core,n_clusters_orig)
+sh$cluster = factor(sh$cluster,levels = c(2,1,6,4,10,5,8,11,3,7,9))
+
+p <- ggplot(kldiv_ordered, aes(x=factor(cluster), y=kldiv)) + #Exchange to sh for shannon entropy
+  geom_boxplot()+
+  geom_point(size=2, alpha=1)+
+  ylab("KL div to patietn average of core")+
+  xlab("Patientgroup")+
+  ylim(c(0,2))+
+  theme(panel.background = element_blank())+
+  ggtitle('Cores assigned to patient group')
+
+pdf('/home/jana/Desktop/R_dat/KL_stromalGroups.pdf')
+p
+dev.off()
+
+```
+
+
+#Regional heterogeneity of extended data figure 10d
+```{r}
+#Bubble plot: Of the patients containing at least 1 image individually assigned to a SCP group, which other SCP groups appear in different images of these same patients.
+
+#How many images of each SCP does every patient contain?
+co = merge(SCP_match,unique(Sample_metadata[,c('core','PID')]),by = 'core');
+co = dcast.data.table(co,'PID ~ patient_pheno')
+
+#Calculate number of patients containing at least one image of a SCP group
+nr_patients = as.matrix(co[,-'PID'])
+nr_patients[nr_patients > 1] = 1
+rownames(nr_patients) = co$PID
+nr_patients = colSums(nr_patients)
+table_nr = as.data.table(nr_patients)
+table_nr$Var1 = names(nr_patients)
+
+#Loop through SCP groups and
+amount = list()
+image_fraction = list()
+for (i in c(1:4,6:(ncol(co)))){ #SCP 5 was not found in this cohort
+
+  #Get patients containing at least one of current SCP
+  cur_nr = as.vector(as.matrix(co[,as.character(eval(i)),with = F]))
+  patients = co[cur_nr > 0,]
+  patients_mat = as.matrix(patients[,-'PID'])
+  rownames(patients_mat) = patients$PID
+  patients_mat[patients_mat > 1] = 1
+  
+  #Calculate in how many patients each of the other SCPs appear together with the one in question
+  cur_amount = colSums(patients_mat)
+  if (nrow(patients_mat) > 1){
+    cur_amount[as.character(eval(i))] = length(which(rowSums(patients_mat[,colnames(patients_mat)[colnames(patients_mat) != as.character(eval(i))]]) == 0))}
+  else{cur_amount[as.character(eval(i))] = length(which(sum(patients_mat[,colnames(patients_mat)[colnames(patients_mat) != as.character(eval(i))]]) == 0))}
+  amount = rbind(amount,cur_amount)
+  
+  #Calculate fractions of all images (of the patients in question) that are of a SCP group
+  image_fraction = rbind(image_fraction,(colSums(patients[,-'PID'])/(sum(colSums(patients[,-'PID'])))))
+
+}
+
+
+#Convert absolute counts to matrix and melt
+amount = matrix(unlist(amount), ncol = ncol(amount), byrow = F)
+rownames(amount) = as.character(c(1:4,6:(ncol(co))))
+colnames(amount) = as.character(c(1:4,6:(ncol(co))))
+m_amount = melt(amount)
+#Divide by nr of patients containing at least one of the SCP (to get fraction of all patients containing at least 1)
+m_amount = merge(m_amount,table_nr,by = 'Var1')
+m_amount = data.table(m_amount)
+m_amount[,fraction_patients := value/nr_patients]
+
+#Convert image fractions to matrix and melt
+image_fraction = matrix(unlist(image_fraction), ncol = ncol(image_fraction), byrow = F)
+rownames(image_fraction) = as.character(c(1:4,6:(ncol(co))))
+colnames(image_fraction) = as.character(c(1:4,6:(ncol(co))))
+m_act = melt(image_fraction)
+m_amount = merge(m_amount,m_act,by = c('Var1','Var2'))
+
+#Bubble plot
+pdf('SCP_mixing.pdf',width = 13)
+ggplot(m_amount, aes(x = factor(Var2), y = factor(Var1))) + 
+  geom_point(aes(size =value.y,#Fraction out of all images of patients containing at least one of SCP on y-axis that are of SCP on x-axis
+                 alpha = fraction_patients, #Fraction out of all patients containing at least one of SCP on y, containing at least one other image of SCP on x
+                 color = factor(Var2))) + 
+  scale_color_manual(values = mycols_patient[unique(m_amount$Var1)])+
+  #scale_color_gradient(low="white", high="red",name = "...") +
+  scale_size(range = c(1, 15),name = "Out of patients containing 1, fraction of images in each group") +
+  theme(axis.text.y=element_text(color = c(mycols_patient[unique(m_amount$Var1)])))
+dev.off()
+
+
+
+
+
+#Same as above but for stromal environments (SEs)
+
+#How many images of each SE does every patient contain?
+co2 = merge(n_clusters_orig,unique(Sample_metadata[,c('core','PID')]),by = 'core');
+co2 = dcast.data.table(co2,'PID ~ cluster')
+
+#Calculate number of patients containing at least one image of a SE group
+nr_patients = as.matrix(co2[,-'PID'])
+nr_patients[nr_patients > 1] = 1
+rownames(nr_patients) = co2$PID
+nr_patients = colSums(nr_patients)
+table_nr = as.data.table(nr_patients)
+table_nr$Var1 = names(nr_patients)
+
+#Loop through SCP groups and
+amount = list()
+image_fraction = list()
+for (i in c(1:11)){
+  
+  #Get patients containing at least one of current SE
+  cur_nr = as.vector(as.matrix(co2[,as.character(eval(i)),with = F]))
+  patients = co2[cur_nr > 0,]
+  patients_mat = as.matrix(patients[,-'PID'])
+  rownames(patients_mat) = patients$PID
+  patients_mat[patients_mat > 1] = 1
+  
+  #Calculate in how many patients each of the other SEs appear together with the one in question
+  cur_amount = colSums(patients_mat)
+  if (nrow(patients_mat) > 1){
+    cur_amount[as.character(eval(i))] = length(which(rowSums(patients_mat[,colnames(patients_mat)[colnames(patients_mat) != as.character(eval(i))]]) == 0))}
+  else{cur_amount[as.character(eval(i))] = length(which(sum(patients_mat[,colnames(patients_mat)[colnames(patients_mat) != as.character(eval(i))]]) == 0))}
+  amount = rbind(amount,cur_amount)
+  
+  #Calculate fractions of all images (of the patients in question) that are of a SCP group
+  image_fraction = rbind(image_fraction,(colSums(patients[,-'PID'])/(sum(colSums(patients[,-'PID'])))))
+}
+
+
+#Convert absolute counts to matrix and melt
+amount = matrix(unlist(amount), ncol = ncol(amount), byrow = F)
+rownames(amount) = as.character(c(1:11))
+colnames(amount) = as.character(c(1:11))
+m_amount = melt(amount)
+#Divide by nr of patients containing at least one of the SE (to get fraction of all patients containing at least 1)
+m_amount = merge(m_amount,table_nr,by = 'Var1')
+m_amount = data.table(m_amount)
+m_amount[,fraction_patients := value/nr_patients]
+
+#Convert image fractions to matrix and melt
+image_fraction = matrix(unlist(image_fraction), ncol = ncol(image_fraction), byrow = F)
+rownames(image_fraction) = as.character(c(1:11))
+colnames(image_fraction) = as.character(c(1:11))
+m_act = melt(image_fraction)
+m_amount = merge(m_amount,m_act,by = c('Var1','Var2'))
+
+#Bubble plot
+pdf('SE_mixing.pdf',width = 20)
+ggplot(m_amount, aes(x = factor(Var2), y = factor(Var1))) + 
+  geom_point(shape = 21,color = 'black',aes(size =value.y,#Fraction out of all images of patients containing at least one of SCP on y-axis that are of SCP on x-axis
+                 alpha = fraction_patients,
+                 fill = fraction_patients)) + #Fraction out of all patients containing at least one of SCP on y, containing at least one other image of SCP on x
+  #scale_color_manual(values = mycols_patient[unique(m_amount$Var1)])+
+  scale_fill_gradient(low="white", high="red",name = "...") +
+  scale_size(range = c(1, 15),name = "...") 
+dev.off()
+
+
+
+#Combined SCP and SE as in Extended Data 10
+names(co)[2:length(names(co))] = paste0('SCP_',names(co)[2:length(names(co))])
+names(co2)[2:length(names(co2))] = paste0('StromalRegion_',names(co2)[2:length(names(co2))])
+co_comb = merge(co,co2,by = 'PID')
+nr_patients = as.matrix(co_comb[,-'PID'])
+nr_patients[nr_patients > 1] = 1
+rownames(nr_patients) = co_comb$PID
+nr_patients = colSums(nr_patients)
+table_nr = as.data.table(nr_patients)
+table_nr$Var1 = names(nr_patients)
+
+amount = list()
+actual_amount =
+tot_amount_SCP = list()
+tot_amount_stroma = list()
+for (i in colnames(co_comb)[colnames(co_comb) != 'PID']){
+  cur_nr = as.vector(as.matrix(co_comb[,eval(i),with = F]))
+  patients = co_comb[cur_nr > 0,]
+  patients_mat = as.matrix(patients[,-'PID'])
+  rownames(patients_mat) = patients$PID
+  patients_mat[patients_mat > 1] = 1
+  cur_amount = colSums(patients_mat)
+  cur_code = str_split(i,'_')[[1]][1]
+  
+  if (nrow(patients_mat) > 1){
+    cur_amount[as.character(eval(i))] = length(which(rowSums(patients_mat[,colnames(patients_mat)[(colnames(patients_mat) != as.character(eval(i))) & str_detect(colnames(patients_mat),cur_code)]]) == 0))}
+  else{cur_amount[as.character(eval(i))] = length(which(sum(patients_mat[,colnames(patients_mat)[(colnames(patients_mat) != as.character(eval(i))) & str_detect(colnames(patients_mat),cur_code)]]) == 0))}
+  amount = rbind(amount,cur_amount)
+  
+  scp = colSums(patients[,str_detect(colnames(patients),'SCP'),with = F])/(sum(colSums(patients[,str_detect(colnames(patients),'SCP'),with = F])))
+  stroma = colSums(patients[,str_detect(colnames(patients),'StromalRegion'),with = F])/(sum(colSums(patients[,str_detect(colnames(patients),'StromalRegion'),with = F])))
+  actual_amount = rbind(actual_amount,c(scp,stroma))
+  tot_amount_SCP = rbind(tot_amount_SCP,c(i,sum(colSums(patients[,c(colnames(patients)[str_detect(colnames(patients),'SCP')]),with = F])))) #Are both identical
+}
+
+cnames = colnames(amount)
+amount = matrix(unlist(amount), ncol = ncol(amount), byrow = F)
+rownames(amount) = cnames
+colnames(amount) = cnames
+m_amount = melt(amount)
+m_amount = merge(m_amount,table_nr,by = 'Var1')
+m_amount = data.table(m_amount)
+m_amount[,fraction_images := value/nr_patients]
+actual_amount = matrix(unlist(actual_amount), ncol = ncol(actual_amount), byrow = F)
+rownames(actual_amount) = cnames
+colnames(actual_amount) = cnames
+m_act = melt(actual_amount)
+m_amount = merge(m_amount,m_act,by = c('Var1','Var2'))
+
+#Order microenvironment regions differently
+order_hierarchy = c('SCP_1','SCP_2','SCP_3','SCP_4','SCP_5','SCP_6','SCP_7','SCP_8','SCP_9','SCP_10','SCP_11','SCP_12','SCP_13','SCP_14','SCP_15','SCP_16','SCP_17','SCP_18','StromalRegion_2','StromalRegion_1','StromalRegion_6','StromalRegion_4','StromalRegion_10','StromalRegion_5','StromalRegion_8','StromalRegion_11','StromalRegion_3','StromalRegion_7','StromalRegion_9')
+m_amount$Var1 = factor(m_amount$Var1,levels = rev(order_hierarchy))
+m_amount$Var2 = factor(m_amount$Var2,levels = order_hierarchy)
+
+pdf('/home/jana/Desktop/R_dat/probability_mixing_stroma_regions.pdf',width = 20,height = 15)
+ggplot(m_amount, aes(x = factor(Var2), y = factor(Var1))) + 
+  geom_point(shape = 21,color = 'black',aes(size =value.y,
+                 #alpha = fraction_images,
+                 fill = fraction_images)) + 
+  #scale_color_manual(values = mycols_patient[unique(m_amount$Var1)])+
+  scale_fill_gradient(low="white", high="red",name = "Out of patients containing 1, fraction of images in each group") +
+  scale_size(range = c(1, 15),name = "Out of patients containing 1, fraction of images in each group") +
+  theme(axis.text.x = element_text(angle = 90))
 dev.off()
 
 ```
@@ -1173,7 +1554,7 @@ cluster_loc = unique(cluster_loc[,c('cluster','location','frac_cluster')])
 
 p <- ggplot(cluster_loc, aes(x=factor(cluster,levels = hr$labels[hr$order]), y=frac_cluster, fill=factor(location,levels = c('CENTER','PERIPHERY','NORMAL','METASTASIS')))) + 
   geom_bar(stat='identity',show.legend = TRUE)+
-  scale_fill_manual("Clusters",values = c('red','blue','grey','black'))+ # rev(mycols)[!cluster_order %in% c(1,3:5,7:8,11,13,22,25:26,33:34)]
+  scale_fill_manual("Clusters",values = c('red','blue','grey','black'))+ 
   labs(fill = "Location")+
   coord_flip()+
   xlab("loc")+
@@ -1187,6 +1568,460 @@ p
 dev.off()
 
 ```
+
+#Read in microenvironment community data from Matlab (topological single-cell communities were extracted using the Matlab wrapper of the C++ Louvain implementation) including all cells (but tumor metacluster agnostic -> all tumor cells are assigned to the same cell type (Pheno = 100))
+```{r}
+nodules = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/Communities/Community_data_microenvironment.csv',header = T)
+
+# #Adjust naming only first time when reading from Matlab (provided data is already cleaned)
+# test = unique(nodules$core)
+# split_core = strsplit(nodules$core,'_', fixed = TRUE)
+# nodules$core = unlist(lapply(split_core, function(x){paste(x[c(1,2,8,9,10)],collapse =  "_")}))
+# #Replace the ones that don't need acquisition number again
+# short = unlist(lapply(strsplit(test,'_', fixed = TRUE),function(x){paste(x[c(1,2,8,9)],collapse =  "_")}))
+# duplicate_idx = duplicated(short) | duplicated(short, fromLast = TRUE)
+# in_cores_index = unlist(lapply(unique(nodules$core)[duplicate_idx],function(x){which(nodules$core %in% x)}))
+# nodules$core[setdiff(1:length(nodules$core),in_cores_index)] = unlist(lapply(strsplit(nodules$core[setdiff(1:length(nodules$core),in_cores_index)],'_', fixed = TRUE), function(x){paste(x[1:length(x)-1],collapse =  "_")}))
+# #Delete zeros from core names
+# nodules$core = unlist(lapply(nodules$core,function(x){gsub("000","",x)}))
+
+#Calculate number of cells from each cell type per community (community numbers are only unique per core)
+nodules[,size_comm := .N, by = c('Community','core')]
+nodules = nodules[size_comm > 9,]
+nodules[,ncells := .N , by = c('Community','Pheno','core')]
+nodules[,perc_cluster := ncells/size_comm, by = c('core','Community')]
+
+#Save variables for bellow in pipeline
+save_size = unique(nodules[,c('core','Community','size_comm')])
+nodules_orig = nodules
+
+#Set all tumor cell types to metacluster 100
+nodules <- unique(nodules[,c("core","Pheno","ncells","Community")])
+nodules$Pheno = factor(nodules$Pheno, levels = c(rev(cluster_order[cluster_order %in% c("41","3","39","7","2" ,"21","28","18","5","1","16")]),"100"))
+
+#Set missing cells types to 0
+nodules_wide = dcast.data.table(nodules,formula = 'Community + core ~ Pheno',value.var = 'ncells',fill = 0)
+nodules_wide_not_norm = nodules_wide
+```
+
+#Run PG on microenvironment communities
+```{r}
+#01-normalize absolute cell type numbers of each community per cel type
+nodules_wide = cbind( nodules_wide[,c('Community','core')],apply(nodules_wide[,-c('Community','core')],2, function(x){(x-min(x))/(max(x)-min(x))}))
+
+#Run PG
+rand_seed = 3
+rpheno_out = cytofkit::Rphenograph(nodules_wide[,-c('Community','core')], k = 20, seed = rand_seed,approx = T)
+nodules_wide$cluster = rpheno_out$membership
+
+#Write out PG result
+#fwrite(nodules_wide[,c('Community','cluster','core')],'PG_stroma_zurich.csv',col.names = T)
+
+#Read in PG result from publication
+cl_dat = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/Communities/PG_microenvironmnet_communities.csv',header = T)
+nodules_wide = merge(nodules_wide, cl_dat, by = c('core','Community'))
+
+```
+
+#Heatmap of cell type content of each microenvironment community type
+```{r}
+nodules_long = melt.data.table(nodules_wide, id.vars = c('Community','core','cluster') ,variable.name = 'channel', value.name = 'perc_cluster')
+summary_dat = nodules_long[ ,list(
+  mean_val= mean(perc_cluster),
+  cell_cluster=.N),
+  by=.(channel,cluster)]
+hm_dat = dcast.data.table(data =summary_dat, formula = 'cluster ~ channel',
+                          value.var = 'mean_val') #can be exchanged for 'median_val' 
+
+#Convert to a matrix
+trownames = hm_dat$cluster
+hm_dat = as.matrix(hm_dat[,-1,with=F])
+row.names(hm_dat) = trownames
+
+# Set color map
+cols = rev(brewer.pal(11,'Spectral'))
+cmap = colorRampPalette(cols)
+
+# Hierarchical clustering on rows with Ward's linkage
+tdist = as.dist(1-cor(t(hm_dat), method="spearman"))
+hr <- hclust(tdist, method="ward.D2")
+co_r <- order.optimal(tdist, hr$merge)
+hr$merge = co_r$merge
+hr$order = co_r$order
+
+# Order rows in heatmap according to clustering
+order_heatmap_zscored = row.names(hm_dat)[hr$order]
+
+# Hierarchical clustering on columns with Ward's linkage
+tdist = as.dist(1-cor((hm_dat), method="spearman"))
+hc <- hclust(tdist, method="ward.D2")
+co_c <- order.optimal(tdist, hc$merge)
+hc$merge = co_c$merge
+hc$order = co_c$order
+
+# Z-score data
+p_dat = scale(hm_dat)
+
+# Censor z-score at 2
+p_dat[p_dat > 2] =2
+p_dat[p_dat < -2] =-2
+
+#Save order
+order_stroma = hr$labels[hr$order]
+
+
+pdf(file="stroma_node_heatmap_k20_zurich.pdf", width=10, height=10)
+
+heatmap.2(p_dat,
+          scale ='none',
+          trace = "none",
+          col=cmap(75),
+          Rowv=as.dendrogram(hr),
+          Colv=as.dendrogram(hc),
+          density.info ='none',
+          cexRow=0.6,
+          cexCol=0.6,
+          margins=c(4,8),
+          xlab = 'Markers',
+          ylab ='Cluster',
+          main = 'PG_norm_slide',
+          colCol = c(rev(rev(cols_corresp_basel)[cluster_order %in% c("41","3" , "39","7","2" ,"21","28","18","5","1","16")]),'black'), 
+          colRow = col_vector) 
+
+dev.off()
+```
+
+#Run tsne on microenvironment communities based on cell type content
+```{r}
+dat_tsne = nodules_wide[!duplicated(nodules_wide[,-c('Community','core','cluster')])] 
+
+#Run a new tsne
+require(doParallel)
+cores = 10
+options('mc.cores' = cores)
+registerDoParallel(cores)
+tsne_comm <- Rtsne.multicore::Rtsne.multicore(dat_tsne[,-c('Community','core','cluster')], 
+            verbose = T, dims = 2, num_threads = 10)
+
+#Save out tsne results
+#fwrite(cbind(dat_tsne,tsne_comm$Y),'tsne_stroma_zurich_final.csv',col.names = F)
+
+#Read in previous tsne result from publication
+tsne_comm = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/Communities/tsne_microenvironment_communities.csv')
+
+dat_tsne = merge(dat_tsne,tsne_comm,by = c('Community','core'))
+dat_tsne$cluster = factor(dat_tsne$cluster,order_stroma)
+
+#plot tsne of microenvironment communities
+p = dat_tsne%>%
+  ggplot(aes(x=V1, y=V2))+
+  geom_point(size=1, alpha=0.8, aes(color=cluster))+
+  labs(colour="Patients")+
+  scale_color_manual(values = col_vector[as.numeric(order_stroma)])+
+  ggtitle('Phenograph')+
+  guides(color=guide_legend(override.aes=list(size=5)))+
+  theme(strip.background = element_blank(),
+        panel.background=element_rect(fill='white', colour = 'black'),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank(),
+        legend.key = element_blank())
+
+pdf('microenv_communities_tsne.pdf',width = 10,height = 10)
+p
+dev.off()
+```
+
+#Stacked bars showing absolute numbers of cells of each cell type per community type
+```{r}
+cl_dat = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/Communities/PG_microenvironmnet_communities.csv',header = T)
+nodules_wide_not_norm = merge(nodules_wide_not_norm,cl_dat,by = c('Community','core'))
+nodules_long = melt.data.table(nodules_wide_not_norm, id.vars = c('Community','core','cluster') ,variable.name = 'channel', value.name = 'perc_cluster')
+nodules_long$perc_cluster = as.double(nodules_long$perc_cluster)
+
+set.seed(2)
+summary_dat = nodules_long[ ,list(
+  median_val = median(perc_cluster),
+  mean_val= mean(perc_cluster),
+  #std_val = std(perc_cluster),
+  cell_cluster=.N),
+  by=.(channel,cluster)]
+
+
+hm_dat = dcast.data.table(data =summary_dat, formula = 'cluster ~ channel',
+                          value.var = 'mean_val') #can be exchanged for 'median_val' 
+
+#Bars ordered acciording to heatmap
+d = unique(summary_dat[,c('channel','cluster','mean_val')])
+p <- ggplot(d, aes(x=factor(cluster,levels = hr$labels[hr$order]), y=mean_val, fill=factor(channel))) + 
+  geom_bar(stat='identity',show.legend = TRUE)+
+  scale_fill_manual("Clusters",values =  c(rev(rev(cols_corresp_basel)[cluster_order %in% c("41","3" , "39","7","2" ,"21","28","18","5","1","16")]),'black'))+ 
+  labs(fill = "Clusters")+
+  coord_flip()+
+  xlab("Patient")+
+  ylab("Percentage of cluster cells in patient")+
+  theme(panel.background = element_blank(),
+        axis.text.y = element_text(colour=col_vector[as.numeric(hr$labels[hr$order])]))+
+  ggtitle('Patient composition')
+
+pdf('comm_cluster_compositions.pdf',width = 10,height = 10)
+p
+dev.off()
+
+```
+
+#Clustered heatmaps showing how tumors are made up by the different microenvironment community types (and grouping into 11 stromal environments SE)
+```{r}
+
+#Prepare data
+nodules_wide = merge(nodules_wide,Sample_metadata[,c('core','PID')],by = 'core')
+enrichment = unique(nodules_wide[,c('cluster','Community','core')])
+enrichment[,both := .N, by = c('cluster','core')]
+enrichment[,frac_patient := both/.N, by = c('core')]
+enrichment = unique(enrichment[,c('core','cluster','frac_patient')])
+d = dcast.data.table(enrichment,formula = 'core  ~ cluster',value.var = 'frac_patient',fill = 0)
+
+#Merge with matched SCP patient group info
+d = merge(d,SCP_match,by = 'core')
+d = merge(d,unique(Sample_metadata[,c('core','clinical_type')]),by = 'core')
+
+#Read in original ordering of this table according to original patient IDs. IDs had to be changed for publication but order needs to remain for result from publication to be exactly reproducible.
+order_orig = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/ZurichTMA/Communities/order_orig.csv',header = T)
+d = d[order(match(core,as.character(order_orig$core))),]
+d_mat = as.matrix(d[,-c('core','patient_pheno','clinical_type')])
+rownames(d_mat) = d$core
+
+#Cluster into 11 groups
+hr = hclust(dist(d_mat), method = "ward.D2")
+clusters = dendextend::cutree(hr, k = 11)
+cnames = names(clusters)
+n_clusters = data.table(cnames)
+names(n_clusters) = 'core'
+n_clusters$cluster = unlist(clusters)
+n_clusters_orig = n_clusters
+
+h = Heatmap(d_mat, name = "Clustergram", km = 1, col = colorRamp2(c(0, 1), c("white", "red")),
+     show_row_names = T, show_column_names =  T, clustering_method_rows = "ward.D2",clustering_method_columns = "ward.D2",split = clusters)+
+Heatmap(factor(d$patient_pheno), name = "SCP", show_row_names = FALSE, width = unit(10, "mm"), col = structure(mycols_patient[sort(unique(d$patient_pheno))], names = as.character(sort(unique(d$patient_pheno)))))+
+  Heatmap(factor(d$clinical_type), name = "clinical_type", show_row_names = FALSE, width = unit(10, "mm"), col = structure(mycols_clinical, names = c('HR-HER2+','HR+HER2-','HR+HER2+','TripleNeg')))
+
+#Save orders
+o_stroma = column_order(h)
+o_patients = names(clusters[unlist(row_order(h))])
+
+pdf('microenv_communities.pdf',width = 10, height = 30)
+h
+dev.off()
+
+#Icons describing cell type contents of each Stromal Environment (SE)
+icon = merge(nodules_orig,n_clusters_orig,by = 'core')
+icon = unique(icon[,c('Pheno','ncells','core','Community','cluster')])
+icon[,tot := sum(as.double(ncells)), by = c('cluster','Pheno')]
+icon[,avg := tot/sum(tot), by = c('cluster')]
+
+bp<- ggplot(icon, aes(x="", y=avg, fill=factor(Pheno,levels = c(cluster_order[cluster_order %in% c("41","3" , "39","7","2","21","28","18","5","1","16")],'100'))))+
+geom_bar(width = 1, stat = "identity")+
+  facet_wrap(~cluster, ncol = 5)+
+  scale_fill_manual("Clusters",values =  c(rev(cols_corresp_basel)[cluster_order %in% c("41","3","39","7","2" ,"21","28","18","5","1","16")],'black'))+
+    theme(strip.background = element_blank(),
+        panel.background=element_rect(fill='white', colour = 'black'),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank(),
+        legend.key = element_blank())
+
+pdf('icons.pdf',width = 10, height = 20)
+bp
+dev.off()
+
+```
+
+#SCP and SE patientgroup enrichments
+```{r}
+#Enrichment bubble plot between SCP and SE patient groups
+cors = merge(n_clusters_orig,SCP_match,by = 'core')
+cors[,nr_both := .N, by = c('cluster','patient_pheno')]
+cors[,perc_ME := nr_both/.N, by = c('cluster')]
+cors[,perc_CT := nr_both/.N, by = c('patient_pheno')]
+cors$cluster = factor(cors$cluster, levels = as.character(1:11))
+cors$patient_pheno = factor(cors$patient_pheno)
+colnames(cors)[1:3] = c('PID','StromalComm_groups','SCP_groups')
+
+#plot
+p4 <- ggplot(cors,aes(y=StromalComm_groups,x=SCP_groups))+
+  geom_point(aes(colour = perc_ME, 
+                 size =perc_CT))  +   
+scale_color_gradient2(low = "blue",  
+                     mid = "white",
+                     high = "red",
+                     name = "Fraction of Comm_cluster in SCP group")+       
+scale_size(range = c(1, 15),name = "Fraction of SCP in Comm_cluster group") +
+      theme(axis.text.x=element_text(color = c(mycols_patient[sort(as.numeric(levels(cors$SCP_groups)))])))
+
+pdf('Zurich_enrichment_SE_SCP_groups.pdf',width = 20, height = 10)
+p4
+dev.off()
+
+
+#Loop through all SE patient groups and test for all SCP groups each one contains whether there is a significant enrichment
+overview = list()
+counter = 1
+for (i in unique(cors$StromalComm_groups)){
+  logic_vector = cors$StromalComm_groups == i
+  MEs = unique(cors$SCP_groups[logic_vector])
+  ME_vectors = lapply(MEs, function(x){cors$SCP_groups == x})
+  res = lapply(ME_vectors, function(x){fisher.test(logic_vector,x,alternative = 'greater')})
+  p = unlist(lapply(res, function(x){x$p.value}))
+  CT_name = rep(i,length(MEs))
+  ME_name = as.character(MEs)
+  #Correct for multiple testing
+  adjusted_p = p.adjust(p, method = 'bonferroni', n = length(p))
+  overview[[counter]] = cbind(CT_name,ME_name,adjusted_p)
+  counter = counter + 1
+}
+
+d = data.table(do.call(rbind,overview))
+colnames(d) = c('StromalCommRegion','SCP_groups','adjusted_p')
+fwrite(d,file = 'enrichment_p_vals_SCP_SE.csv',col.names = T)
+
+
+#Enrichment bubble plot between clinical subtype and SE patient groups
+cors = merge(n_clusters_orig,unique(Sample_metadata[,c('core','clinical_type')]),by = 'core')
+cors = cors[clinical_type != '',]
+cors[,nr_both := .N, by = c('cluster','clinical_type')]
+cors[,perc_ME := nr_both/.N, by = c('cluster')]
+cors[,perc_CT := nr_both/.N, by = c('clinical_type')]
+cors$cluster = factor(cors$cluster, levels = as.character(1:11))
+cors$clinical_type = factor(cors$clinical_type)
+colnames(cors)[1:3] = c('patientcode','StromalComm_groups','clinical_type')
+
+#plot
+p4 <- ggplot(cors,aes(y=StromalComm_groups,x=clinical_type))+
+  geom_point(aes(colour = perc_ME, 
+                 size =perc_CT))  +   
+scale_color_gradient2(low = "blue",  
+                     mid = "white",
+                     high = "red",
+                     name = "Fraction of Comm_cluster in clinical_type group")+       
+scale_size(range = c(1, 15),name = "Fraction of clinical_type in Comm_cluster group") +
+      theme(axis.text.x=element_text(color = c(mycols_clinical)))
+
+pdf('Zurich_enrichment_SE_clinical_groups.pdf',width = 20, height = 10)
+p4
+dev.off()
+
+
+#Loop through all SE patient groups and test for all clinical subtypes each one contains whether there is a significant enrichment
+overview = list()
+counter = 1
+for (i in unique(cors$StromalComm_groups)){
+  logic_vector = cors$StromalComm_groups == i
+  MEs = unique(cors$clinical_type[logic_vector])
+  ME_vectors = lapply(MEs, function(x){cors$clinical_type == x})
+  res = lapply(ME_vectors, function(x){fisher.test(logic_vector,x,alternative = 'greater')})
+  p = unlist(lapply(res, function(x){x$p.value}))
+  CT_name = rep(i,length(MEs))
+  ME_name = as.character(MEs)
+  #Correct for multiple testing
+  adjusted_p = p.adjust(p, method = 'bonferroni', n = length(p))
+  overview[[counter]] = cbind(CT_name,ME_name,adjusted_p)
+ 
+  counter = counter + 1
+}
+
+d = data.table(do.call(rbind,overview))
+colnames(d) = c('StromalCommRegion','clinical_type','adjusted_p')
+fwrite(d,file = 'enrichment_p_vals_clinical_SE.csv',col.names = T)
+```
+
+#Center or periphery core origin of microenvironment community types
+```{r}
+nodules_wide = merge(unique(Sample_metadata[,c('core','PID','location')]),nodules_wide,by = 'core')
+cluster_loc = nodules_wide[,c('cluster','core','Community','location')]
+cluster_loc$cluster = factor(cluster_loc$cluster)
+cluster_loc = cluster_loc[!location %in% c('NORMAL','METASTASIS','[]'),]
+cluster_loc[,count := .N, by = c('cluster','location')]
+cluster_loc[,frac_cluster := count/.N, by = 'cluster']
+cluster_loc[,frac_location := count/.N, by = 'location']
+cluster_loc = unique(cluster_loc[,c('cluster','location','frac_cluster')])
+
+#Stacked bar plot
+p <- ggplot(cluster_loc, aes(x=cluster, y=frac_cluster, fill=factor(location,levels = c('CENTER','PERIPHERY')))) + 
+  geom_bar(stat='identity',show.legend = TRUE)+
+  scale_fill_manual("Clusters",values = c('red','blue'))+
+  labs(fill = "Location")+
+  coord_flip()+
+  xlab("loc")+
+  ylab("Frac cluster")+
+  theme(panel.background = element_blank(),
+        axis.text.y = element_text(colour=col_vector))+
+  ggtitle('Location composition')
+
+
+pdf('zurich_community_location_microenv.pdf',width = 10, height = 20)
+p
+dev.off()
+
+```
+
+#Order neighborhood analysis output per image (imported above) according to SEs
+```{r}
+clustergram_dat_meta = clustergram_dat_meta[core %in% o_patients,]
+clustergram_dat_meta = clustergram_dat_meta[order(match(core,o_patients))]
+mat = mat[clustergram_dat_meta$core,]
+splitting = clusters
+splitting = splitting[order(match(names(splitting),clustergram_dat_meta$core))]
+splitting = splitting[names(splitting) %in% clustergram_dat_meta$core]
+
+#Add colorbars for location, met status, grade and patient ID
+h = Heatmap(mat, name = "Clustergram", km = 1, col = colorRamp2(c(-1, 0, 1), c("blue", "white", "red")),
+     show_row_names = TRUE, show_column_names =  TRUE, cluster_rows = F,clustering_method_columns = "ward.D2",split = splitting)+   
+ Heatmap(factor(clustergram_dat_meta$location), name = "Location", show_row_names = FALSE, width = unit(10, "mm"), col = structure(c("white","red","blue","black"), names = c('[]','CENTER','PERIPHERY','METASTASIS')))+ 
+Heatmap(factor(clustergram_dat_meta$grade), name = "Grade", show_row_names = FALSE, width = unit(10, "mm"), col = structure(c("green","blue","red",'black'), names = c('1','2','3','METASTASIS')))+ 
+Heatmap(factor(clustergram_dat_meta$PTNM_M), name = "Met", show_row_names = FALSE, width = unit(10, "mm"), col = structure(c("black","gray",'white'), names = c('M1','M0_IPLUS','M0')))+ 
+  Heatmap(factor(clustergram_dat_meta$PID), name = "Patient", show_row_names = T, width = unit(10, "mm"), col = structure(c(col_vector,'black','gray'), names = levels(factor(clustergram_dat_meta$PID))))
+
+
+pdf('neighborhood_accordingtoSE.pdf',width = 90, height = 60)
+h
+dev.off()
+
+
+#Enrichment analysis for pairwise neighborhood interactions in SE groups
+n_clusters_orig = merge(n_clusters_orig,clustergram_dat,by = 'core')
+n_clusters_orig$cluster = as.factor(n_clusters_orig$cluster)
+
+#Loop through all pairwise neighborhood interactions and test for each significantly enriched/depleted interaction whether there is a enrichment for one SE group. Run once for positive interactions (enrichments) and once for negative (avoidances).
+overview = list()
+counter = 1
+for (i in 4:ncol(n_clusters_orig)){
+  cur = as.matrix(n_clusters_orig[,eval(i),with =F])
+  cur[cur == -1] = 0
+  if (sum(cur)> 0){ #adapt sign: run once for positive interactions and once for negative interactions (also adapt -1 to 1 bellow)
+    cur = as.factor(cur)
+    #only for positive association
+    res = lapply(unique(n_clusters_orig$cluster), function(x){fisher.test(cur == 1,n_clusters_orig$cluster == x,alternative = 'greater',simulate.p.value=TRUE)}) 
+    p = unlist(lapply(res, function(x){x$p.value}))
+    interaction_name = rep(names(n_clusters_orig)[i],length(unique(n_clusters_orig$cluster)))
+    group_name = unique(n_clusters_orig$cluster)
+    #Correct for multiple testing of different SEs
+    adjusted_p = p.adjust(p, method = 'bonferroni', n = length(p))
+    overview[[counter]] = cbind(interaction_name,group_name,adjusted_p)
+    counter = counter + 1
+    }
+}
+
+#Write out overview of results
+d = data.table(do.call(rbind,overview))
+d = d[adjusted_p < 0.05,]
+fwrite(d,file = 'Zurich_enrichment_SE_significantInteractions_positive.csv',col.names = T)
+
+```
+
+
+
+
+
 
 
 

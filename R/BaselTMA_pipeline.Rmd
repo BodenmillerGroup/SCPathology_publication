@@ -2237,6 +2237,7 @@ nodules = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/
 
 #Calculate number of cells from each cell type per community (community numbers are only unique per core)
 nodules[,size_comm := .N, by = c('Community','core')]
+nodules = nodules[size_comm > 9,]
 nodules[,ncells := .N , by = c('Community','Pheno','core')]
 nodules[,perc_cluster := ncells/size_comm, by = c('core','Community')]
 
@@ -2244,7 +2245,7 @@ nodules[,perc_cluster := ncells/size_comm, by = c('core','Community')]
 save_size = unique(nodules[,c('core','Community','size_comm')])
 nodules_orig = nodules
 
-#Make missing cells types 0
+#Set missing cells types to 0
 nodules <- unique(nodules[,c("core","Pheno","ncells","Community")])
 nodules$Pheno = factor(nodules$Pheno, levels = sort(unique(nodules$Pheno)))
 nodules_wide = dcast.data.table(nodules,formula = 'Community + core ~ Pheno',value.var = 'ncells',fill = 0)
@@ -2264,7 +2265,7 @@ rpheno_out = cytofkit::Rphenograph(nodules_wide[,-c('Community','core')], k = 30
 nodules_wide$cluster = igraph::membership(rpheno_out)
 
 #Write out PG result
-#fwrite(nodules_wide[,c('Community','cluster')],'PG_basel_stroma_final.csv',col.names = T)
+#fwrite(nodules_wide[,c('Community','cluster','core')],'PG_basel_stroma_final.csv',col.names = T)
 
 #Read in PG result from publication
 cl_dat = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/Communities/PG_microenvironment_communities.csv',header = T)
@@ -2373,7 +2374,7 @@ tsne_comm <- Rtsne.multicore::Rtsne.multicore(dat_tsne[,-c('Community','core','c
             verbose = T, dims = 2, num_threads = 10)
 
 #Save out tsne results
-#fwrite(tsne_comm$Y,'tsne_stroma_basel_final.csv',col.names = F)
+#fwrite(cbind(dat_tsne,tsne_comm$Y),'tsne_stroma_basel_final.csv',col.names = F)
 
 #Read in previous tsne result from publication
 tsne_comm = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/BaselTMA/Communities/tsne_microenvironment_communities.csv')
@@ -2385,6 +2386,7 @@ dat_tsne$PID = as.character(dat_tsne$PID)
 dat_tsne = merge(dat_tsne,meta_patient_clustering,by = 'PID')
 dat_tsne$cluster = factor(dat_tsne$cluster,order_stroma)
 
+#plot tsne of microenvironment communities
 p = dat_tsne%>%
   ggplot(aes(x=V1, y=V2))+
   geom_point(size=1, alpha=0.8, pch = 21, aes(color=cluster,fill = cluster))+
@@ -2898,24 +2900,18 @@ neighb_clusters_orig$cluster = as.factor(neighb_clusters_orig$cluster)
 overview = list()
 counter = 1
 for (i in 5:(ncol(neighb_clusters_orig)-2)){
-  
-  
   cur = as.matrix(neighb_clusters_orig[,eval(i),with =F])
   cur[cur == 1] = 0
-  if (sum(cur)< 0){ #adapt sign: run once for positive interactions and once for negative interactions
+  if (sum(cur)< 0){ #adapt sign: run once for positive interactions and once for negative interactions (also adapt -1 to 1 bellow)
     cur = as.factor(cur)
-  
     #only for positive association
     res = lapply(unique(neighb_clusters_orig$cluster), function(x){fisher.test(cur == -1,neighb_clusters_orig$cluster == x,alternative = 'greater',simulate.p.value=TRUE)})
     p = unlist(lapply(res, function(x){x$p.value}))
-      
-    
     interaction_name = rep(names(neighb_clusters_orig)[i],length(unique(neighb_clusters_orig$cluster)))
     group_name = unique(neighb_clusters_orig$cluster)
     #Correct for multiple testing of different TMEs
     adjusted_p = p.adjust(p, method = 'bonferroni', n = length(p))
     overview[[counter]] = cbind(interaction_name,group_name,adjusted_p)
-    
     counter = counter + 1
     }
 }
