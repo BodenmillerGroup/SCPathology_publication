@@ -1,156 +1,41 @@
 ---
-title: "Example Workflow TSNE, Phenograph, Heatmap"
-author: "HartlandJ"
-date: "08/06/2017"
-output:
-  html_notebook: default
-  html_document: default
+title: "IMC vs IHC comparison"
+author: "Jana Fischer and Hartland Jackson"
+html_document: default
 ---
 
-# Aim
-Using Vito's basic R scripts and Daniel's analysis from first RNA IMC paper.
-Trying to combine all patient data with IHC quantifcation and IMC data.
+#IHC-IMC comprison from Extended Data 2: first part whole image quant, second part single-cell quant
 
-## Start the script
-
-```{r Libraries, include=FALSE}
-library('data.table')
-library('Rtsne')
-library(threejs)
-library('RColorBrewer')
-library(destiny)
+```{r}
+library(data.table)
+library(RColorBrewer)
 library(dplyr)
-library(dtplyr)
-library(gplots)
-library(cba)
-library(bbRtools)
 library(gplots)
 library(ggplot2)
+library(stringr)
+library(ComplexHeatmap)
+library(circlize)
 library(ggpmisc)
 ```
 
-
-
-## Settings
-Set your project specific folders and settings
-
-
-```{r imc specific settings}
-
-
-# input files: paths to your input and output folder
-fn_cells = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions/cpout/RescaledCellsExp.csv'
-fn_image = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions/cpout/Image.csv'
-
-# mixed meta data files
-## at least one contains 'core' information for IMC
-## also needs IHC specific location if necessary
-## must have matching patient information in this case 'SP_Number' and 'PATIENT_CODE' in fn_tissue
-fn_patient = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions/TMA208_patient.csv'
-fn_tissue = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions/TMA208_tissue.csv'
-fn_core = '/home/ubuntu/tmp/server_homes/janaf/Data/2019/Revisions/TMA208_core.csv'
-
-# combine patient meta data
-
-## load meta data
-patient <- fread(fn_patient,header = T)
-tissue <- fread(fn_tissue,header = T)
-punch <- fread(fn_core,header = T)
-#IMAGE <- fread(fn_image ,header = T)
-punch = punch[,-1]
-
-
-## get matched SP_NUMBER and PATIENT_CODE from tissue.csv and add to 
-#punches <- unique(PATIENTSPs)
-PATIENTSPs <- unique(tissue[,c('PATIENT_CODE','SP_NUMBER')])
-
-punch <- merge(punch, PATIENTSPs, by = 'SP_NUMBER')
-
-## only use specific columns in patient csv
-patient_clean <- patient[, c('PATIENT_CODE','PATIENT_AGE','MENOPAUSAL','TUMOR','NODES','POSITIVE_LYMPH_NODES','TESTED_LYMPH_NODES','METASTASES','RESECTION', 'size', 'TimetoFixation', 'HER2', 'ER', 'PR')]
-
-## add patient meta data to all punches and cores
-punch_meta <- merge(punch, patient_clean[1:72], by = 'PATIENT_CODE', suffixes = c("",""))
-#punch_meta <- merge(punch, patient_clean, by = 'PATIENT_CODE')
-
-## rename IHC_location to match QuPATH output
-## remove spaces from IHC_location coordinates
-names(punch_meta)[9] <-paste("IHC_location")
-names(punch_meta)[10] <-paste("IMC_location")
-names(punch_meta)[4] <-paste("Location")
-punch_meta[,'IHC_location']<- gsub(' ', '',punch_meta$IHC_location)
-
-
-##S
-```
-
-```{r}
-#dat[, channel := clean_Target]
-#dat[, counts := MeanIntensity ]
-#dat[, condition := core]
-
-
-# IHC quantification folder
-## must have IHC core location
-
-## a pannel file with has columns:
-# -'channel': corresponds to the channel number in the 'full' stack. Please check the '_full.csv' generated at the full stack to see the order
-# - 'main': 0, 1: should the channel be used? needs to be used if e.g. muliple ab are used in one channel in which case only 1 can be main
-# - 'clean_Target': a nice name of the channel - needs to be UNIQUE!
-
-fn_pannel = '/home/hartlandj/Data/TMA208/20170523_pannel_TMA208_clinical.csv'
-
-## Position in the 'core' information in the fn: A01_asd_asdf.tiff -> A01 is at position 1 
-#     therefore core_pos = 1 results in A01 returned
-# -> possible to specify multiple positions e.g. c(1,2) -> A01_asd
-# -> if core_pos=0 the whole filename will be used
-core_pos = 7
-
-# a table with metadata
-# should contain at least the column:
-# - core: contains the core id
-#fn_meta = '/home/hartlandj/Data/TMA208/R_Analysis/20170523_meta_TMA208_clinical.csv'
-
-
-## cp output
-
-# 'ImageNumber', 'ObjectNumber' are obligatory, add names of shape parameters if needed 
-cp_idvars = c('ImageNumber', 'ObjectNumber','AreaShape_Area', 'AreaShape_MajorAxisLength', 'AreaShape_MinorAxisLength')
-# cp_idvars = = c('ImageNumber', 'ObjectNumber') # if the shape parameters have not been measured
-
-# Which CP measurement  types should be kept?
-cp_measurevars = c('IntegratedIntensity','MeanIntensity','MedianIntensity')
-```
-
-```{r}
-#Set Working Directory
-filepath <- c("/home/ubuntu/tmp/Data/2019/Revisions/")
-# setwd(filepath)
-# file.names <- list.files(filepath,full.names = T)
+```{r Settings}
+#Set directory containing all data for IHC IMC comparison
+filepath <- c("/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/IHC_IMC/")
 
 ```
 
-
+#Load IHC QuPATH scoring (image quant)
 ```{r}
-#Add IHC QuPATH scoring
-# QuPATH output csv files
-## all contain IHC location
+#QuPATH output csv files all contain IHC location
 
-## load IHC data
-## rename Core names and DAB channel 
-## remove spaces from IHC_location column
+#Load IHC data
+EcadherinTissue <- fread(paste(filepath,"QuPATH/ZT208_37_Ecadherin_Annotations.txt",sep=""),header = T)
+HER2Tissue <- fread(paste(filepath,"QuPATH/ZT208_39_HER2_Annotations.txt",sep=""),header = T)
+ERTissue <- fread(paste(filepath,"QuPATH/ZT208_7_ER_Annotations.txt",sep=""),header = T)
+PRTissue <- fread(paste(filepath,"QuPATH/ZT208_8_PR_Annotations.txt",sep=""),header = T)
+KI67Tissue <- fread(paste(filepath,"QuPATH/ZT208_6_KI67_Annotations.txt",sep=""),header = T)
 
-
-####### NO AREA CALC, see below #####################
-
-EcadherinTissue <- fread(paste(filepath,"/QuPATH/ZT208_37_Ecadherin_Annotations.txt",sep=""),header = T)
-HER2Tissue <- fread(paste(filepath,"/QuPATH/ZT208_39_HER2_Annotations.txt",sep=""),header = T)
-ERTissue <- fread(paste(filepath,"/QuPATH/ZT208_7_ER_Annotations.txt",sep=""),header = T)
-PRTissue <- fread(paste(filepath,"/QuPATH/ZT208_8_PR_Annotations.txt",sep=""),header = T)
-KI67Tissue <- fread(paste(filepath,"/QuPATH/ZT208_6_KI67_Annotations.txt",sep=""),header = T)
-
-
-# Format IHC quant data
+#Format IHC quant data
 names(EcadherinTissue)[1] <-paste("IHC_location")
 names(EcadherinTissue)[6] <-paste("meanDAB_Ecadherin")
 names(EcadherinTissue)[11] <-paste("Area")
@@ -185,182 +70,44 @@ KI67Tissue[,'IHC_location']<- gsub(' - PathAnnotationObject', '',KI67Tissue$IHC_
 KI67Tissue <- subset(KI67Tissue, , c('IHC_location','meanDAB_KI67'))
 IHC = merge(IHC, KI67Tissue, by='IHC_location', all.x = TRUE)
 
-
-
-#tissue <- fread(fn_tissue,header = T)
-#punch <- fread(fn_core,header = T)
-
-#IHC_channels = c('EcadherinIHC','','')
-
 ```
 
+#Load IMC image quant data
 ```{r}
-#channels to compare between IHC and IMC
+#Channels to compare between IHC and IMC
 IHCvsIMC_channels = c('Intensity_MeanIntensity_ER', 'Intensity_MeanIntensity_PR', 'Intensity_MeanIntensity_HER2', 'Intensity_MeanIntensity_Ecadherin', 'Intensity_MeanIntensity_Ki67')
-#foldername = 'PathName_HER2'
 
-#Add IMC single channel quantification
-IMCtotalimage <- fread(paste(filepath,"R_Analysis/IMCQuant_Image.csv",sep=""),header = T)
+#Load IMC single channel quantification
+IMCtotalimage <- fread(paste(filepath,"IMCQuant_Image.csv",sep=""),header = T)
 
-#IMC_foldername <- subset(IMCtotalimage, , foldername)
-IMCtotalimage[, IMC_location := bbRtools::getInfoFromFileList(as.character(.BY),sep = '_',strPos =core_pos),by=PathName_HER2]
-
+#Extract core locations
+IMCtotalimage[, IMC_location := bbRtools::getInfoFromFileList(as.character(.BY),sep = '_',strPos =7),by=PathName_HER2]
 IMC <- subset(IMCtotalimage, , c(IHCvsIMC_channels, 'IMC_location'), by=IMC_location)
 
-######################
-# using IMC_location like core is used in vito's script
-# 
-#                 next step --- combine IMC, IHC and meta data using meta data IHC and IMC locations
-  ## 
-  ## edit 'IMC location' to 'IMC_location'
-  ##  merge data
-  ## plot
-
-  ## load in pathology scoring 
-  ## color correlation plots using pathology scoring
-  
-
-
 ```
 
+#Match IHC to IMC cores
 ```{r}
-##Connecting the data for plotting
+#Load punch metadata
+punch_meta <- fread(paste0(filepath,"punch_meta.csv"),header = T)
 
-##Just core locations from the meta data
-
-#without meta data
+#Without metadata
 IHCvsIMC_map <- subset(punch_meta, , c('IHC_location', 'IMC_location'))
 IHCvsIMC_map = distinct(IHCvsIMC_map)
 IHC_mapped = merge(IHCvsIMC_map, IHC, by='IHC_location')
 IMC_mapped = merge(IHCvsIMC_map, IMC, by='IMC_location')
 IHCvsIMC_mapped = merge(IHC_mapped, IMC, by='IMC_location')
-#IHCvsIMC_mapped = unique(IHCvsIMC_mapped$IMC_location)
-plot_dat = IHCvsIMC_mapped
 
-```
-
-```{r}
-# add meta data
+#Add metadata
 plot_dat <- merge(IHCvsIMC_mapped, punch_meta, by='IMC_location')
 plot_dat <- plot_dat [!duplicated(IMC_location)]
 
 ```
 
-<!-- #CV per patient IMC vs IHC -->
-<!-- ```{r} -->
-<!-- #Sub from single cell quant in revision script -->
-<!-- names(plot_dat)[names(plot_dat) == 'IMC_location'] = 'IMCname' -->
-<!-- plot_dat = merge(plot_dat, sub[,c('patientcode','core','IMCname')], by = 'IMCname') -->
-
-<!-- plot_dat = unique(plot_dat[,c('patientcode','core','meanDAB_Ecadherin','meanDAB_HER2','meanDAB_ER','meanDAB_PR','meanDAB_KI67','Intensity_MeanIntensity_ER','Intensity_MeanIntensity_PR','Intensity_MeanIntensity_HER2','Intensity_MeanIntensity_Ecadherin','Intensity_MeanIntensity_Ki67')]) -->
-<!-- plot_dat[,mean_patientIMC := mean(Intensity_MeanIntensity_ER),by = 'patientcode'] -->
-<!-- plot_dat[,mean_patientIHC := mean(meanDAB_ER),by = 'patientcode'] -->
-<!-- plot_dat[,std_patientIMC := pracma::std(Intensity_MeanIntensity_ER),by = 'patientcode'] -->
-<!-- plot_dat[,std_patientIHC := pracma::std(meanDAB_ER),by = 'patientcode'] -->
-<!-- plot_dat[,cv_patientIMC := std_patientIMC/mean_patientIMC] -->
-<!-- plot_dat[,cv_patientIHC := std_patientIHC/mean_patientIHC] -->
-
-<!-- cu = unique(plot_dat[,c('patientcode','cv_patientIMC','cv_patientIHC')]) -->
-
-
-<!-- my.formula <- y ~ x -->
-
-<!-- ggplot(cu, aes(x=cv_patientIMC, y=cv_patientIHC ))+ -->
-<!--   geom_point(aes(alpha=1),size=1)+ -->
-<!--   geom_smooth(method = "lm")+ -->
-<!--   stat_poly_eq(formula = my.formula,  -->
-<!--                 aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),  -->
-<!--                 parse = TRUE) + -->
-<!--   theme_bw() -->
-
-<!-- plot_dat[,mean_patientIMC := mean(Intensity_MeanIntensity_PR),by = 'patientcode'] -->
-<!-- plot_dat[,mean_patientIHC := mean(meanDAB_PR),by = 'patientcode'] -->
-<!-- plot_dat[,std_patientIMC := pracma::std(Intensity_MeanIntensity_PR),by = 'patientcode'] -->
-<!-- plot_dat[,std_patientIHC := pracma::std(meanDAB_PR),by = 'patientcode'] -->
-<!-- plot_dat[,cv_patientIMC := std_patientIMC/mean_patientIMC] -->
-<!-- plot_dat[,cv_patientIHC := std_patientIHC/mean_patientIHC] -->
-
-<!-- cu = unique(plot_dat[,c('patientcode','cv_patientIMC','cv_patientIHC')]) -->
-
-
-<!-- my.formula <- y ~ x -->
-
-<!-- ggplot(cu, aes(x=cv_patientIMC, y=cv_patientIHC ))+ -->
-<!--   geom_point(aes(alpha=1),size=1)+ -->
-<!--   geom_smooth(method = "lm")+ -->
-<!--   stat_poly_eq(formula = my.formula,  -->
-<!--                 aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),  -->
-<!--                 parse = TRUE) + -->
-<!--   theme_bw() -->
-
-<!-- plot_dat[,mean_patientIMC := mean(Intensity_MeanIntensity_Ki67),by = 'patientcode'] -->
-<!-- plot_dat[,mean_patientIHC := mean(meanDAB_KI67),by = 'patientcode'] -->
-<!-- plot_dat[,std_patientIMC := pracma::std(Intensity_MeanIntensity_Ki67),by = 'patientcode'] -->
-<!-- plot_dat[,std_patientIHC := pracma::std(meanDAB_KI67),by = 'patientcode'] -->
-<!-- plot_dat[,cv_patientIMC := std_patientIMC/mean_patientIMC] -->
-<!-- plot_dat[,cv_patientIHC := std_patientIHC/mean_patientIHC] -->
-
-<!-- cu = unique(plot_dat[,c('patientcode','cv_patientIMC','cv_patientIHC')]) -->
-
-
-<!-- my.formula <- y ~ x -->
-
-<!-- ggplot(cu, aes(x=cv_patientIMC, y=cv_patientIHC ))+ -->
-<!--   geom_point(aes(alpha=1),size=1)+ -->
-<!--   geom_smooth(method = "lm")+ -->
-<!--   stat_poly_eq(formula = my.formula,  -->
-<!--                 aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),  -->
-<!--                 parse = TRUE) + -->
-<!--   theme_bw() -->
-
-<!-- plot_dat[,mean_patientIMC := mean(Intensity_MeanIntensity_HER2),by = 'patientcode'] -->
-<!-- plot_dat[,mean_patientIHC := mean(meanDAB_HER2),by = 'patientcode'] -->
-<!-- plot_dat[,std_patientIMC := pracma::std(Intensity_MeanIntensity_HER2),by = 'patientcode'] -->
-<!-- plot_dat[,std_patientIHC := pracma::std(meanDAB_HER2),by = 'patientcode'] -->
-<!-- plot_dat[,cv_patientIMC := std_patientIMC/mean_patientIMC] -->
-<!-- plot_dat[,cv_patientIHC := std_patientIHC/mean_patientIHC] -->
-
-<!-- cu = unique(plot_dat[,c('patientcode','cv_patientIMC','cv_patientIHC')]) -->
-
-
-<!-- my.formula <- y ~ x -->
-
-<!-- ggplot(cu, aes(x=cv_patientIMC, y=cv_patientIHC ))+ -->
-<!--   geom_point(aes(alpha=1),size=1)+ -->
-<!--   geom_smooth(method = "lm")+ -->
-<!--   stat_poly_eq(formula = my.formula,  -->
-<!--                 aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),  -->
-<!--                 parse = TRUE) + -->
-<!--   theme_bw() -->
-
-<!-- plot_dat[,mean_patientIMC := mean(Intensity_MeanIntensity_HER2),by = 'patientcode'] -->
-<!-- plot_dat[,mean_patientIHC := mean(meanDAB_Ecadherin),by = 'patientcode'] -->
-<!-- plot_dat[,std_patientIMC := pracma::std(Intensity_MeanIntensity_HER2),by = 'patientcode'] -->
-<!-- plot_dat[,std_patientIHC := pracma::std(meanDAB_Ecadherin),by = 'patientcode'] -->
-<!-- plot_dat[,cv_patientIMC := std_patientIMC/mean_patientIMC] -->
-<!-- plot_dat[,cv_patientIHC := std_patientIHC/mean_patientIHC] -->
-
-<!-- cu = unique(plot_dat[,c('patientcode','cv_patientIMC','cv_patientIHC')]) -->
-
-
-<!-- my.formula <- y ~ x -->
-
-<!-- ggplot(cu, aes(x=cv_patientIMC, y=cv_patientIHC ))+ -->
-<!--   geom_point(aes(alpha=1),size=1)+ -->
-<!--   geom_smooth(method = "lm")+ -->
-<!--   stat_poly_eq(formula = my.formula,  -->
-<!--                 aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),  -->
-<!--                 parse = TRUE) + -->
-<!--   theme_bw() -->
-
-
-
-<!-- ``` -->
-
+#Plot mean Image intensity of IHC vs IMC for individual channels
 ```{r}
 cur_channelname_x = 'meanDAB_PR'
 cur_channelname_y = 'Intensity_MeanIntensity_PR'
-
 my.formula <- y ~ x
 
 ggplot(plot_dat, aes_string(x=cur_channelname_x, y=cur_channelname_y ))+
@@ -368,34 +115,12 @@ ggplot(plot_dat, aes_string(x=cur_channelname_x, y=cur_channelname_y ))+
   geom_smooth(method = "lm")+
   stat_poly_eq(formula = my.formula, 
                 aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-                parse = TRUE) +
-  theme_bw()
+                parse = TRUE) +theme_bw()
 ```
 
+#All channels
 ```{r}
-# reformat to have multiple plots based on antibody
-IHC_names <- colnames(IHC)
-IMC_names <- colnames(IMC)
-IMC_names <- IMC_names[c(6,4,3,1,2,5)]
-Antigen_names = c("Antigen", "Ecadherin", "HER2", "ER", "PR", "KI67")
-IHCvsIMC_Antigens <- data.frame("IHC" = IHC_names, "IMC" = IMC_names, "Antigen" = Antigen_names, stringsAsFactors = FALSE)
-colnames(IHCvsIMC_Antigens) <- IHCvsIMC_Antigens[1,]
-IHCvsIMC_Antigens <- IHCvsIMC_Antigens[-c(1),]
-
-IHCvsIMC_long <- melt(IHCvsIMC_mapped, id = c("IMC_location", "IHC_location"))
-IHCvsIMC_Antigens_long <- melt(IHCvsIMC_Antigens, id = c("Antigen"))
-IHCvsIMC_Antigens_long <- IHCvsIMC_Antigens_long[,-c(2)]
-colnames(IHCvsIMC_Antigens_long)[2]<- "Stain"
-IHCvsIMC_long <- merge(IHCvsIMC_long, IHCvsIMC_Antigens_long, by.x = "variable", by.y = "Stain", all.x = TRUE, suffixes = "")
-
-IHCvsIMC_wide <- dcast.data.table(IHCvsIMC_long, IMC_location+IHC_location+Antigen ~ variable, value.var = "value", fill = NA, fun.aggregate = mean)
-
-
-```
-
-```{r}
-
-# reformat to have multiple plots based on antibody
+#Reformat to have multiple plots based on antibody
 IHC_names <- data.frame("Method" = "IHC", "Stain" = colnames(IHC))
 IMC_names <- data.frame("Method" = "IMC", "Stain" = colnames(IMC))
 IMC_names <- slice(IMC_names,c(6,4,3,1,2,5))
@@ -410,981 +135,251 @@ IMC_names <- IMC_names[-c(1),]
 #IMC_names_long <- melt(IHC_names, id = c("Antigen","Method", "Stain"))
 IHCvsIMC_Antigens <- rbind(IHC_names, IMC_names)
 
-colnames(IHCvsIMC_long)[3]<- "Stain"
-
 IHCvsIMC_long <- melt(IHCvsIMC_mapped, id = c("IMC_location", "IHC_location"))
 names(IHCvsIMC_long)[names(IHCvsIMC_long) == 'variable'] = "Stain"
 IHCvsIMC_Antigens_long <- merge(IHCvsIMC_long, IHCvsIMC_Antigens, by = "Stain")
 
 IHCvsIMC_Antigens_wide <- dcast.data.table(IHCvsIMC_Antigens_long, IMC_location+IHC_location+Antigen ~ Method, value.var = "value", fill = NA, fun.aggregate = mean)
 
-#IHCvsIMC_Antigens <- dcast.data.table(IHCvsIMC_Antigens, Antigen ~)
-
-# add meta data
+#Add meta data
 plot_dat <- merge(IHCvsIMC_Antigens_wide, punch_meta, by='IMC_location', suffixes = "")
 plot_dat <- plot_dat[GRADE != "",]
-```
 
-```{r}
-
-```
-
-
-```{r}
-
-
+#Plot
 my.formula <- y ~ x
-
 ggplot(plot_dat, aes_string(x="IHC", y="IMC" ))+
   facet_wrap(facets = "Antigen", scales = "free")+
   geom_point(aes(alpha=1, color=as.factor(GRADE),size=1))+
   geom_smooth(method = "lm")+
   stat_poly_eq(formula = my.formula, 
                 aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-                parse = TRUE) +
-  theme_bw()
+                parse = TRUE) +theme_bw()
+```
+
+#Read in Single-cell IHC data for comparison with IMC quant
+```{r}
+#Read in positive count metadata from clinical assessment
+Sample_metadat_zuri = fread('/home/ubuntu/tmp/server_homes/janaf/Data/2019/Data_publication/IHC_IMC/Meta_IHCcounts.csv',header = T)
+
+#Read in SC quant IHC data from QuPath
+Ki67pos <- fread(paste(filepath,"/QuPATH/TMACoreSingleCell_Ki-67_Pos.txt",sep=""),header = T)
+Ki67pos[,marker := 'Ki67pos']
+Ki67pos[,all := 'Ki67']
+Ki67pos = Ki67pos[,c('Name','marker','all')]
+
+Ki67neg <- fread(paste(filepath,"/QuPATH/TMACoreSingleCell_Ki-67_Neg.txt",sep=""),header = T)
+Ki67neg[,marker := 'Ki67neg']
+Ki67neg[,all := 'Ki67']
+Ki67neg = Ki67neg[,c('Name','marker','all')]
+
+PRpos <- fread(paste(filepath,"/QuPATH/TMACoreSingleCell_PR_Pos.txt",sep=""),header = T)
+PRpos[,marker := 'PRpos']
+PRpos[,all := 'PR']
+PRpos = PRpos[,c('Name','marker','all')]
+
+PRneg <- fread(paste(filepath,"/QuPATH/TMACoreSingleCell_PR_Neg.txt",sep=""),header = T)
+PRneg[,marker := 'PRneg']
+PRneg[,all := 'PR']
+PRneg = PRneg[,c('Name','marker','all')]
+
+ERpos <- fread(paste(filepath,"/QuPATH/TMACoreSingleCell_ER_Pos.txt",sep=""),header = T)
+ERpos[,marker := 'ERpos']
+ERpos[,all := 'ER']
+ERpos = ERpos[,c('Name','marker','all')]
+
+ERneg <- fread(paste(filepath,"/QuPATH/TMACoreSingleCell_ER_Neg.txt",sep=""),header = T)
+ERneg[,marker := 'ERneg']
+ERneg[,all := 'ER']
+ERneg = ERneg[,c('Name','marker','all')]
+
+#Format into one table and calculate measures
+IHCSC = rbind(Ki67pos,Ki67neg,PRpos,PRneg,ERpos,ERneg)
+IHCSC[,'Name']<- gsub(' - PathCellObject', '',IHCSC$Name)
+IHCSC[,IHC_count := .N ,by = c('Name','marker')]
+IHCSC[,tot_cells := .N, by = c('Name','all')]
+IHCSC[,frac := IHC_count/tot_cells]
+IHCSC = unique(IHCSC)
+
+#Kick out controls
+IHCSC= IHCSC[!Name %in% unique(IHCSC$Name[!IHCSC$Name %in% IHCvsIMC_map$IHC_location]),]
+IHCvsIMC_map= IHCvsIMC_map[!IHC_location %in% unique(IHCvsIMC_map$IHC_location[!IHCvsIMC_map$IHC_location %in% IHCSC$Name]),]
+
+#Map names of IMC and IHC cores
+IHCSC$IMCname = mapvalues(IHCSC$Name, unique(IHCSC$Name), IHCvsIMC_map[match(unique(IHCSC$Name),IHCvsIMC_map$IHC_location),IMC_location], warn_missing = TRUE)
+```
+
+#IHC and IMC positive single-cell quantitfication comparison
+```{r}
+#Take single-cell IMC data and dcast
+wide = dcast.data.table(dat,formula = 'core + id ~ channel', value.var = 'c_counts')
+
+#Look at distributions of markers of interest to decide on positive cell threshold
+ggplot(wide, aes(x=`1441101Er168Di Ki67`, y=`234832Lu175Di panCyto` ))+
+  geom_point(aes(alpha=1/10, size=0.01))+
+  geom_density2d(colour = "red")
+
+ggplot(wide, aes(x=`1441101Er168Di Ki67`))+
+  geom_density()+
+  xlim(c(0,2))
+
+#Count positive cells per core for Ki67 acoording to set threshold
+wide[,IMC_pos_count := length(which(`1441101Er168Di Ki67` > 0.5 )),by = 'core'] #/.N   for fraction
+sub = unique(wide[,c('core','IMC_pos_count')])
+sub$IMCname = unlist(lapply(strsplit(sub$core,'_'),function(x){x[length(x)]}))
+
+#Merge with IHC data
+comb = merge(sub,unique(IHCSC[marker == 'Ki67pos',]), by = 'IMCname')
+comb = merge(comb, Sample_metadata, by = 'core')
+
+#Plot correlation of amount of positively counted single cells for IMC and IHC
+my.formula <- y ~ x
+ggplot(comb, aes(x=IMC_pos_count, y=IHC_count ))+
+  geom_point(aes(alpha=1, size=1))+ #color=as.factor(GRADE),
+  geom_smooth(method = "lm")+
+  stat_poly_eq(formula = my.formula, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) + theme_bw()
 
 
-names(plot_dat)[names(plot_dat) == 'PATIENT_CODE'] = 'patientcode'
-names(plot_dat)[names(plot_dat) == 'Antigen'] = 'V2'
-plot_dat = merge(plot_dat,na.omit(cbind(Sample_metadat_zuri[,c('patientcode','Erperc')],rep('ER',nrow(Sample_metadat_zuri)))), by = c('patientcode','V2'),all.x = T)
-plot_dat = merge(plot_dat,na.omit(cbind(Sample_metadat_zuri[,c('patientcode','Prperc')],rep('PR',nrow(Sample_metadat_zuri)))), by = c('patientcode','V2'),all.x = T)
-plot_dat = merge(plot_dat,na.omit(cbind(Sample_metadat_zuri[,c('patientcode','Ecadh')],rep('Ecadh',nrow(Sample_metadat_zuri)))), by = c('patientcode','V2'),all.x = T)
-plot_dat = merge(plot_dat,na.omit(cbind(Sample_metadat_zuri[,c('patientcode','HER2')],rep('HER2',nrow(Sample_metadat_zuri)))), by = c('patientcode','V2'),all.x = T)
-plot_dat$HER2.y[plot_dat$HER2.y == 2] = 100
-plot_dat$HER2.y[plot_dat$HER2.y == 1] = 50
-plot_dat$HER2.y = as.integer(plot_dat$HER2.y)
+#ER
+ggplot(wide, aes(x=`112475Gd156Di Estroge`, y=`234832Lu175Di panCyto` ))+
+  geom_point(aes(alpha=1/10, size=0.01))+
+  geom_density2d(colour = "red")
+ggplot(wide, aes(x=`112475Gd156Di Estroge`))+
+  geom_density()+
+  xlim(c(0,2))
 
-plot_dat$clinical = coalesce(plot_dat$Erperc, plot_dat$Prperc,plot_dat$Ecadh,plot_dat$HER2.y)
+#Count positive cells per core for ER acoording to set threshold
+wide[,IMC_pos_count := length(which(`112475Gd156Di Estroge` > 1 )),by = 'core'] #/.N   for fraction
+sub = unique(wide[,c('core','IMC_pos_count')])
+sub$IMCname = unlist(lapply(strsplit(sub$core,'_'),function(x){x[length(x)]}))
 
-#ggsave("IHCvsIMC_correlation.pdf", path = filepath, width= 10, height = 6, units = "cm")
-pdf('/home/jana/Desktop/R_dat/coresIHCIMC.pdf',height = 10,width = 20)
-
-ggplot(plot_dat, aes_string(x="IMC", y= "IHC"))+
-  facet_wrap(facets = "V2", scales = "free")+
-  geom_point(aes(alpha=1,color = clinical,size=1))+ #, color=Erperc
+#Merge with IHC data
+comb = merge(sub,unique(IHCSC[marker == 'ERpos',]), by = 'IMCname')
+comb = merge(comb,Sample_metadata[,c('core','PID')], by = 'core')
+comb = merge(comb,na.omit(Sample_metadat_zuri[,c('PID','Erperc')]), by = 'PID',all.x = T)
+my.formula <- y ~ x
+ggplot(comb, aes(x=IMC_pos_count, y=IHC_count ))+
+  geom_point(aes(alpha=1,color=Erperc, size=1))+ #color=as.factor(GRADE),
   geom_smooth(method = "lm")+
   scale_color_viridis(option="viridis")+
   stat_poly_eq(formula = my.formula, 
                 aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
                 parse = TRUE) +
   theme_bw()
-dev.off()
 
 
 
+#PR
+ggplot(wide, aes(x=`312878Gd158Di Progest`, y=`234832Lu175Di panCyto` ))+
+  geom_point(aes(alpha=1/10, size=0.01))+
+  geom_density2d(colour = "red")
 
+wide[,IMC_pos_count := length(which(`312878Gd158Di Progest` > 1 )),by = 'core'] 
+sub = unique(wide[,c('core','IMC_pos_count')])
+sub$IMCname = unlist(lapply(strsplit(sub$core,'_'),function(x){x[length(x)]}))
 
-```
+comb = merge(sub,unique(IHCSC[marker == 'PRpos',]), by = 'IMCname')
+comb = merge(comb,Sample_metadata[,c('core','PID')], by = 'core')
+comb = merge(comb,na.omit(Sample_metadat_zuri[,c('PID','Prperc')]), by = 'PID',all.x = T)
 
-```{r}
-######## Load IHC information including AREA ########
+my.formula <- y ~ x
 
-EcadherinTissue <- fread(paste(filepath,"/QuPATH/ZT208_37_Ecadherin_Annotations.txt",sep=""),header = T)
-HER2Tissue <- fread(paste(filepath,"/QuPATH/ZT208_39_HER2_Annotations.txt",sep=""),header = T)
-ERTissue <- fread(paste(filepath,"/QuPATH/ZT208_7_ER_Annotations.txt",sep=""),header = T)
-PRTissue <- fread(paste(filepath,"/QuPATH/ZT208_8_PR_Annotations.txt",sep=""),header = T)
-KI67Tissue <- fread(paste(filepath,"/QuPATH/ZT208_6_KI67_Annotations.txt",sep=""),header = T)
-
-
-# Format IHC quant data
-names(EcadherinTissue)[1] <-paste("IHC_location")
-names(EcadherinTissue)[6] <-paste("meanDAB_Ecadherin")
-names(EcadherinTissue)[11] <-paste("Area_Ecadherin")
-EcadherinTissue[,'IHC_location']<- gsub(' - PathAnnotationObject', '',EcadherinTissue$IHC_location)
-IHC <- subset(EcadherinTissue, , c('IHC_location','meanDAB_Ecadherin', 'Area_Ecadherin'))
-
-names(HER2Tissue)[1] <-paste("IHC_location")
-names(HER2Tissue)[6] <-paste("meanDAB_HER2")
-names(HER2Tissue)[11] <-paste("Area_HER2")
-HER2Tissue[,'IHC_location']<- gsub(' - PathAnnotationObject', '',HER2Tissue$IHC_location)
-HER2Tissue <- subset(HER2Tissue, , c('IHC_location','meanDAB_HER2', 'Area_HER2'))
-IHC = merge(IHC, HER2Tissue, by='IHC_location', all.x = TRUE)
-
-names(ERTissue)[1] <-paste("IHC_location")
-names(ERTissue)[6] <-paste("meanDAB_ER")
-names(ERTissue)[26] <-paste("Area_ER")
-ERTissue[,'IHC_location']<- gsub(' - PathAnnotationObject', '',ERTissue$IHC_location)
-ERTissue <- subset(ERTissue, , c('IHC_location','meanDAB_ER', 'Area_ER'))
-IHC = merge(IHC, ERTissue, by='IHC_location', all.x = TRUE)
-
-names(PRTissue)[1] <-paste("IHC_location")
-names(PRTissue)[6] <-paste("meanDAB_PR")
-names(PRTissue)[26] <-paste("Area_PR")
-PRTissue[,'IHC_location']<- gsub(' - PathAnnotationObject', '',PRTissue$IHC_location)
-PRTissue <- subset(PRTissue, , c('IHC_location','meanDAB_PR', 'Area_PR'))
-IHC = merge(IHC, PRTissue, by='IHC_location', all.x = TRUE)
-
-names(KI67Tissue)[1] <-paste("IHC_location")
-names(KI67Tissue)[6] <-paste("meanDAB_KI67")
-names(KI67Tissue)[11] <-paste("Area_KI67")
-KI67Tissue[,'IHC_location']<- gsub(' - PathAnnotationObject', '',KI67Tissue$IHC_location)
-KI67Tissue <- subset(KI67Tissue, , c('IHC_location','meanDAB_KI67', 'Area_KI67'))
-IHC = merge(IHC, KI67Tissue, by='IHC_location', all.x = TRUE)
-
-
-```
-
-
-
-```{r}
-
-######## Load IMC information including Width and Height ########
-
-#channels to compare between IHC and IMC
-IHCvsIMC_channels = c('Intensity_MeanIntensity_ER', 'Intensity_MeanIntensity_PR', 'Intensity_MeanIntensity_HER2', 'Intensity_MeanIntensity_Ecadherin', 'Intensity_MeanIntensity_Ki67')
-
-Widths = c('Width_ER')
-Heights = c('Height_ER')
-
-#Add IMC single channel quantification
-IMCtotalimage <- fread(paste(filepath,"/R_Analysis/IMCQuant_Image.csv",sep=""),header = T)
-
-#IMC_foldername <- subset(IMCtotalimage, , foldername)
-IMCtotalimage[, IMC_location := getInfoFromFileList(as.character(.BY),sep = '_',strPos =core_pos),by=PathName_HER2]
-
-#select only the measurements of interest
-#IMC <- subset(IMCtotalimage, , c(IHCvsIMC_channels, 'IMC_location'), by=IMC_location)
-IMC <- subset(IMCtotalimage, , c(IHCvsIMC_channels, Widths, Heights, 'IMC_location'), by=IMC_location)
-
-IMCtotalimage[, IMCArea := Width_ER * Height_ER]
-
-#change Ki67 to KI67 to match IHC, Width and Height titles
-colnames(IMC)<- gsub('Ki67', 'KI67', colnames(IMC))
-colnames(IMC)<- gsub('Width_ER', 'Width', colnames(IMC))
-colnames(IMC)<- gsub('Height_ER', 'Height', colnames(IMC))
-
-#calculate area for IMC
-IMC[, IMCArea := Width * Height]
-
-```
-
-
-
-```{r}
-
-##current
-##another attempt at getting area in there
-IMCArea <- merge(IMC, IHCvsIMC_map, by = "IMC_location")
-#IHCArea <- merge(IHC, IHCvsIMC_map, by = "IHC_location")
-
-IHCvsIMCArea_wide <- merge(IHC, IMCArea, by = "IHC_location")
-
-AreaChangeTable <- subset(IHCvsIMCArea_wide, , c("IHC_location", "Area_ER", "Area_PR", "Area_Ecadherin", "Area_HER2", "Area_KI67", "IMCArea"))
-AreaChangeTable_long <- melt(AreaChangeTable, id.vars = c("IHC_location", "IMCArea"))
-AreaChangeTable_long[, AreaChange := abs(100-(100* IMCArea/value))]
-AreaChangeTable_long[, Antigen := getInfoFromString(as.character(.BY[[1]]),sep = '_',strPos =-1),by=variable]
-AreaChangeTable_long[,'variable']<- gsub("Area_.*", "IHCArea",AreaChangeTable_long$variable, fixed = FALSE)
-colnames(AreaChangeTable_long) <- gsub('value', 'IHCArea', colnames(AreaChangeTable_long))
-
-IHCquant <- subset(IHCvsIMCArea_wide, , c("IHC_location", 'meanDAB_ER', 'meanDAB_PR', 'meanDAB_HER2', 'meanDAB_Ecadherin', 'meanDAB_KI67'))
-IHCquant_long <- melt(IHCquant, id.vars = c("IHC_location"))
-IHCquant_long[, Antigen := getInfoFromString(as.character(.BY[[1]]),sep = '_',strPos =-1),by=variable]
-IHCquant_long[,'variable']<- gsub("meanDAB_.*", "IHC",IHCquant_long$variable, fixed = FALSE)
-
-
-IMCquant <- subset(IHCvsIMCArea_wide, , c("IHC_location", 'Intensity_MeanIntensity_ER', 'Intensity_MeanIntensity_PR', 'Intensity_MeanIntensity_HER2', 'Intensity_MeanIntensity_Ecadherin', 'Intensity_MeanIntensity_KI67'))
-IMCquant_long <- melt(IMCquant, id.vars = c("IHC_location"))
-IMCquant_long[, Antigen := getInfoFromString(as.character(.BY[[1]]),sep = '_',strPos =3),by=variable]
-IMCquant_long[,'variable']<- gsub("Intensity_MeanIntensity.*", "IMC",IMCquant_long$variable, fixed = FALSE)
-
-IHCquant_wide <- dcast.data.table(IHCquant_long, IHC_location+Antigen ~ variable, value.var = "value",fill = NA, fun.aggregate = mean)
-IMCquant_wide <- dcast.data.table(IMCquant_long, IHC_location+Antigen ~ variable, value.var = "value",fill = NA, fun.aggregate = mean)
-AreaChangeTable_long <- subset(AreaChangeTable_long, , c("IHC_location", "Antigen", "AreaChange"))
-#AreaChangeTable_wide <- dcast.data.table(AreaChangeTable_long, IHC_location+Antigen ~ variable, value.var = "AreaChange", fill = NA, fun.aggregate = mean)
-
-IHCvsIMCquant_wide <- merge(IHCquant_wide, IMCquant_wide, by = c("IHC_location", "Antigen"))
-IHCvsIMCquant_wide <- merge(IHCvsIMCquant_wide, AreaChangeTable_long, by = c("IHC_location", "Antigen"))
-
-plot_dat <- IHCvsIMCquant_wide
-plot_dat$AreaChange <- as.numeric(plot_dat$AreaChange)
-# add meta data
-plot_dat <- merge(plot_dat, punch_meta, by='IHC_location', suffixes = "")
-plot_dat <- plot_dat[GRADE != "",]
-
-```
-
-```{r}
-
-
- my.formula <- y ~ x
-
- ggplot(plot_dat, aes_string(x="IHC", y="IMC", color = "AreaChange"))+
-   facet_wrap(facets = "Antigen", scales = "free")+
-   geom_point(size=1)+
-   scale_color_gradient(low = "black", high = "white", limits = as.numeric(c("0","50")))+
-   geom_smooth(method = "lm")+
-   stat_poly_eq(formula = my.formula,
-                 #aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
-                 parse = TRUE) +
-   theme_bw()
-
-```
-
-
-```{r}
-##melt IHC and IMC to match Antigens
-
-IHC_long <- melt(IHC, id = c("IHC_location"))
-IHC_long[, Antigen := getInfoFromString(as.character(.BY[[1]]),sep = '_',strPos =-1),by=variable]
-
-#Name all area measurements the same and IHC stains
-IHC_long[,'variable']<- gsub("Area_.*", "IHCArea",IHC_long$variable, fixed = FALSE)
-IHC_long[,'variable']<- gsub("meanDAB_.*", "IHC",IHC_long$variable, fixed = FALSE)
-
-IMC_long <- melt(IMC, id = c("IMC_location"), measure.vars = c('Intensity_MeanIntensity_ER', 'Intensity_MeanIntensity_PR', 'Intensity_MeanIntensity_HER2', 'Intensity_MeanIntensity_Ecadherin', 'Intensity_MeanIntensity_KI67', 'IMCArea'))
-IMC_long[, Antigen := getInfoFromString(as.character(.BY[[1]]),sep = '_',strPos =3),by=variable]
-IMC_long[,'variable']<- gsub("Intensity_MeanIntensity_.*", "IMC",IMC_long$variable, fixed = FALSE)
-
-IHC_long <- merge(IHCvsIMC_map, IHC_long, by = "IHC_location")
-IMC_long <- merge(IHCvsIMC_map, IMC_long, by = "IMC_location")
-IHCvsIMC_long <- rbind(IHC_long, IMC_long)
-#IHCvsIMC_long[,AreaChange := ]
-
-IHCvsIMC_wide <- dcast.data.table(IHCvsIMC_long, IHC_location+IMC_location+Antigen ~ variable, value.var = "value",fill = NA, fun.aggregate = mean)
-#IHCvsIMC_wide[,AreaChange := ]
-#IHCvsIMC_wide <- dcast.data.table(IHCvsIMC_long, IHC_location+IMC_location ~ Antigen+variable, value.var = "value",fill = NA, fun.aggregate = mean)
-IMCArea <- subset(IMC, , c("IMC_location", "IMCArea"))
-IHCvsIMC_wide <- merge(IHCvsIMC_wide, IMCArea, by = "IMC_location")
-
-IHCvsIMC_wide[, AreaChange := ]
-IHCvsIMC_longarea <- melt(IHCvsIMC_wide, id = c("IHC_location", "IMC_location"))
-#IHCvsIMC_widearea <- dcast.data.table(IHCvsIMC_longarea, IHC_location+IMC_location ~ variable, value.var = "value",fill = NA, fun.aggregate = mean)
-
-#IHCvsIMC_wide[, AreaChange := IHCArea - IMCArea]
-#IHCvsIMC_longarea <- melt(IHCvsIMC_wide, id = c("IHC_location", "IMC_location"), measure.vars = c("IHC", "IHCArea", "IMC"))
-#IHCvsIMC_widearea <- dcast.data.table(IHCvsIMC_long, IHC_location+IMC_location ~ variable, value.var = "value",fill = NA, fun.aggregate = mean)
-
-
-#IHCvsIMC_wide <- merge(IHCvsIMC_wide, subset(IMCtotalimage, c("IMC_location","IMCArea"), by = IMC_location, all.y = TRUE)
-IHCvsIMC_long<-NULL
-
-
-```
-
-
-
-
-```{r}
-##Connecting the data for plotting
-
-##Just core locations from the meta data
-
-# matched list of IHC and IMC coordinates
-IHCvsIMC_map <- subset(punch_meta, , c('IHC_location', 'IMC_location'))
-IHCvsIMC_map = distinct(IHCvsIMC_map)
-
-# add other coordinate system to IHC and IMC
-IHC_mapped = merge(IHCvsIMC_map, IHC, by='IHC_location')
-IMC_mapped = merge(IHCvsIMC_map, IMC, by='IMC_location')
-
-
-
-IHCvsIMC_mapped = merge(IHC_mapped, IMC, by='IMC_location')
-#IHCvsIMC_mapped = unique(IHCvsIMC_mapped$IMC_location)
-
-IHCvsIMC_long <- melt(IHCvsIMC_mapped, id = c("IMC_location", "IHC_location"))
-IHCvsIMC_Antigens_long <- merge(IHCvsIMC_long, IHCvsIMC_Antigens, by = "Stain")
-
-IHCvsIMC_Antigens_wide <- dcast.data.table(IHCvsIMC_Antigens_long, IMC_location+IHC_location+Antigen ~ Method, value.var = "value", fill = NA, fun.aggregate = mean)
-
-#IHCvsIMC_Antigens <- dcast.data.table(IHCvsIMC_Antigens, Antigen ~)
-
-# add meta data
-plot_dat <- merge(IHCvsIMC_Antigens_wide, punch_meta, by='IMC_location', suffixes = "")
-plot_dat <- plot_dat[GRADE != "",]
-```
-```
-
-
-
-```{r}
-
-
-ggplot(IHCvsIMC_mapped, aes(x=Intensity_MeanIntensity_HER2, y=meanDAB_HER2)
-  geom_point(aes(alpha=1,size=2))+
+ggplot(comb, aes(x=IMC_pos_count, y=IHC_count ))+
+  geom_point(aes(alpha=1, color=Prperc, size=1))+ #color=as.factor(GRADE),
   geom_smooth(method = "lm")+
-  stat_poly_eq(formula = y~x, 
-                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-                parse = TRUE) +
-  theme_bw()
-  
-ggplot(IHCvsIMC_mapped, aes(x=Intensity_MeanIntensity_HER2, y=meanDAB_HER2)) +
-    geom_point(shape=1)+ 
-    geom_smooth(method=lm)
-
-
-cur_channelname_x = 'meanDAB_HER2'
-cur_channelname_y = 'Intensity_MeanIntensity_HER2'
-my.formula <- y~x
-#pdfpaste(filepath,core_correlation_meanCore_IHCvsIMC_HER2_linear.pdf,sep=""),width= 10,height = 6)
-ggplot(plot_dat, aes_string(x=cur_channelname_x, y=cur_channelname_y ))+
-  geom_point(aes(alpha=1, color=as.factor(HER2)),size=2)+
-  geom_text(aes(label=IMC_location),hjust=0, vjust=0)+
-  #scale_x_continuous(trans='log10')+
-  #scale_y_continuous(trans='log10')+
-  #scale_y_continuous(limits = c(0,0.0004))+
-  geom_smooth(method = "lm",formula = y ~ x)+
-    stat_poly_eq(formula = my.formula, 
-               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-               parse = TRUE) +  
-  theme_bw()
-  
-  
-
-cur_channelname_x = 'meanDAB_Ecadherin'
-cur_channelname_y = 'Intensity_MeanIntensity_Ecadherin'
-my.formula <- y~x
-##pdfpaste(filepath,"core_correlation_CK19_RNA_protein_on_median_transformed_counts_from_epithelial_cells_and_all_cores.pdf",sep=""),width= 10,height = 6)
-ggplot(plot_dat, aes_string(x=cur_channelname_x, y=cur_channelname_y ))+
-  geom_point(aes(alpha=1, color=as.factor(Grid)),size=6)+
-  geom_smooth(method = "lm",formula = y ~ x)+
-    stat_poly_eq(formula = my.formula, 
-               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-               parse = TRUE) +  
-  theme_bw()
-  
-##dev.off()
-```
-
-
-```{r}
-## subset data to exclude normal tissues
-# add meta data
-
-plot_patient <- subset(punch_meta, !Location == 'Normal')
-plot_patient <- subset(plot_patient, !Location == '')
-plot_patient <- subset(plot_patient, !Location == 'LK Metastase')
-plot_patient <- subset(plot_patient, HER2 == TRUE)
-plot_dat <- merge(IHCvsIMC_mapped, plot_patient, by='IMC_location')
-
-cur_channelname_x = 'meanDAB_HER2'
-cur_channelname_y = 'Intensity_MeanIntensity_HER2'
-my.formula <- y~x
-#pdfpaste(filepath,core_correlation_meanCore_IHCvsIMC_HER2_linear.pdf,sep=""),width= 10,height = 6)
-ggplot(plot_dat, aes_string(x=cur_channelname_x, y=cur_channelname_y ))+
-  geom_point(aes(alpha=1, color=as.factor(HER2)),size=2)+
-  #geom_text(aes(label=IMC_location),hjust=0, vjust=0)+
-  #scale_x_continuous(trans='log10')+
-  #scale_y_continuous(trans='log10')+
-  #scale_y_continuous(limits = c(0,0.0004))+
-  geom_smooth(method = "lm",formula = y ~ x)+
-    stat_poly_eq(formula = my.formula, 
-               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-               parse = TRUE) +  
-  theme_bw()
-  
-##dev.off()
-```
-
-
-
-
-```{r}
-
-
-```{r correlate the mean expression of all cells per core for ERBB2 and Her2 }
-mncells_long = cells_long[ , .(value =mean(counts_transf)), by=.(ImageNumber ,measure,channel  )]
-
-
-cur_meas = 'MeanIntensity'
-cur_channelname_x = 'ERBB2_mRNA'
-cur_channelname_y = 'Her2_a'
-
-setkey(panel, clean_Target)
-setkey(mncells_long, ImageNumber)
-cur_channel = panel[c(cur_channelname_x, cur_channelname_y), ]
-plot_dat = mncells_long[measure == cur_meas & channel %in% cur_channel$channel, ]
-
-setkey(panel, channel)
-plot_dat[, channelname:= panel[J(.BY[[1]]), clean_Target], by=channel]
-setkey(image_meta_long,ImageNumber)
-plot_dat =dcast.data.table(plot_dat[image_meta_long], paste(paste(c(colnames(image_meta_long),c('ImageNumber')), collapse='+'),'~channelname'), value.var = 'value')
-
-my.formula <- y~x
-##pdfpaste(filepath,"core_correlation_Her2_on_transformed_counts_all_cells_and_all_cores.pdf",sep=""),width = 8,height = 5)
-ggplot(plot_dat, aes_string(x=cur_channelname_x, y=cur_channelname_y ))+
-  geom_point(aes(alpha=1, color=as.factor(grade),size=2))+
-  geom_smooth(method = "lm")+
+  scale_color_viridis(option="viridis")+
   stat_poly_eq(formula = my.formula, 
                 aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
                 parse = TRUE) +
   theme_bw()
-```
-
-```{r Load files}
 
 
-###############################################
-### load panel information to name channels ###
-###############################################
+#E-Cadherin
+Ecadh <- fread(paste(filepath,"/QuPATH/TMACoreSingleCell_Ecadherin.txt",sep=""),header = T)
+Ecadh[,marker := 'Ecadh']
+Ecadh = Ecadh[,c('Name','marker','Cell: DAB OD mean')]
 
-panel <- fread(fn_pannel,header = T)
-panel = panel[main == 1,]
-setkey(panel,channel)
+ggplot(Ecadh, aes(x=`Cell: DAB OD mean`)) + 
+    geom_density(alpha=.2, fill="#FF6666")
 
+#Set threshold for positive IHC cells
+Ecadh[,IHC_count := length(which(`Cell: DAB OD mean` > 0.25 )),by = 'Name']
+Ecadh[,'Name']<- gsub(' - PathCellObject', '',Ecadh$Name)
+Ecadh = unique(Ecadh[,c('Name','IHC_count')])
 
+#Map core names
+Ecadh= Ecadh[!Name %in% unique(Ecadh$Name[!Ecadh$Name %in% IHCvsIMC_map$IHC_location]),]
+IHCvsIMC_map= IHCvsIMC_map[!IHC_location %in% unique(IHCvsIMC_map$IHC_location[!IHCvsIMC_map$IHC_location %in% Ecadh$Name]),]
+Ecadh$IMCname = mapvalues(Ecadh$Name, unique(Ecadh$Name), IHCvsIMC_map[match(unique(Ecadh$Name),IHCvsIMC_map$IHC_location),IMC_location], warn_missing = TRUE)
 
-###############################################
-### load image meta data                    ###
-###############################################
+#Set threshold for positive IMC cells
+ggplot(wide, aes(x=`1031747Er167Di ECadhe`, y=`234832Lu175Di panCyto` ))+
+  geom_point(aes(alpha=1/10, size=0.01))+
+  geom_density2d(colour = "red")
+ggplot(wide, aes(x=`1031747Er167Di ECadhe`))+
+  geom_density()
 
-image_meta <- fread(fn_image,header = T,stringsAsFactors = F)
+wide[,IMC_pos_count := length(which(`1031747Er167Di ECadhe` > 3 )),by = 'core']
+sub = unique(wide[,c('core','IMC_pos_count')])
+sub$IMCname = unlist(lapply(strsplit(sub$core,'_'),function(x){x[length(x)]}))
 
-#image_meta_short <- image_meta[, c('Count_RescaledCellsExp','ImageNumber','FileName_FullStack')]
-cols = c('ImageNumber','FileName_FullStack')
+comb = merge(sub,unique(Ecadh), by = 'IMCname')
+comb = merge(comb,Sample_metadata[,c('core','PID')], by = 'core')
+comb = merge(comb,na.omit(Sample_metadat_zuri[,c('PID','Ecadh')]), by = 'PID',all.x = T)
+my.formula <- y ~ x
 
-# This is actually correct!: , ,
-image_meta_short <- subset(image_meta, , cols)
-
-if (core_pos != 0){
-  image_meta_short[, core := getInfoFromFileList(as.character(.BY),sep = '_',strPos =core_pos),by=FileName_FullStack]
-} else {
-  image_meta_short[, core := as.character(.BY),by=FileName_FullStack]
-}
-
-```
-```
-
-```{r}
-
-tissue_primary <- subset(tissue, Location == 'Primary Tumor')
-tissue_other <- subset(tissue, Location != 'Primary Tumor')
-#tissue_clean <- tissue[, !c('SP_Number', 'Parent', )]
-## 
-setkey(punch, SP_NUMBER)
-setkey(tissue, SP_NUMBER)
-tissue_punch = join(tissue, punch, by = "SP_NUMBER", type = "left")
-
-
-
-setkey(patient_clean, PATIENT_CODE)
-setkey(tissue, PATIENT_CODE)
-patient_meta <- patient_clean[tissue]
+ggplot(comb, aes(x=IMC_pos_count, y=IHC_count ))+
+  geom_point(aes(alpha=1,color=Ecadh, size=1))+ #color=as.factor(GRADE),
+  geom_smooth(method = "lm")+
+  scale_color_viridis(option="viridis")+
+  stat_poly_eq(formula = my.formula, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) +theme_bw()
 
 
-```{r}
-#idcols = colnames(cells_long)[!colnames(cells_long) %in% c('measure', 'value', 'variable')]
-#dat = dcast.data.table(cells_long, formula = paste0(paste(idcols, collapse = '+'), '~', 'measure'), value.var = 'value')
+#HER2
+HER2 <- fread(paste(filepath,"/QuPATH/ZT208_39 Detections.txt",sep=""),header = T)
+HER2[,marker := 'HER2']
+HER2 = HER2[,c('Name','marker','Cell: DAB OD mean')]
 
+ggplot(HER2, aes(x=`Cell: DAB OD mean`)) + 
+    geom_density(alpha=.2, fill="#FF6666")
 
-#dat = merge(dat, panel[,list(channel, clean_Target)], by='channel')
-#dat = merge(dat, image_meta[,list(ImageNumber, core)], by = 'ImageNumber')
-```
-```
+#Set threshold for positive IHC cells
+HER2[,IHC_count := length(which(`Cell: DAB OD mean` > 0.5 )),by = 'Name'] #/.N   for fraction
+HER2[,'Name']<- gsub(' - PathCellObject', '',HER2$Name)
+HER2 = unique(HER2[,c('Name','IHC_count')])
 
-```{r General Settings}
-# fikders
+#Map core names
+HER2= HER2[!Name %in% unique(HER2$Name[!HER2$Name %in% IHCvsIMC_map$IHC_location]),]
+IHCvsIMC_map= IHCvsIMC_map[!IHC_location %in% unique(IHCvsIMC_map$IHC_location[!IHCvsIMC_map$IHC_location %in% HER2$Name]),]
+HER2$IMCname = mapvalues(HER2$Name, unique(HER2$Name), IHCvsIMC_map[match(unique(HER2$Name),IHCvsIMC_map$IHC_location),IMC_location], warn_missing = TRUE)
 
-out_folder = '/home/hartlandj/Data/TMA208/R_Output'
-# the random seed
-rand_seed = 1234
-# Should the script use only the cells subsampled at the tsne step?
-subsampled_cells_only = F
+#Set threshold for positive IMC cells
+ggplot(wide, aes(x=`201487Eu151Di cerbB`, y=`234832Lu175Di panCyto` ))+
+  geom_point(aes(alpha=1/10, size=0.01))+
+  geom_density2d(colour = "red")
+ggplot(wide, aes(x=`201487Eu151Di cerbB`))+
+  geom_density()
 
-## load tsne: should the script try to load an existing tsne?
-load_tsne = F
-load_phenograph = F
-load_flowsom = F
+wide[,IMC_pos_count := length(which(`201487Eu151Di cerbB` > 3 )),by = 'core'] 
+sub = unique(wide[,c('core','IMC_pos_count')])
+sub$IMCname = unlist(lapply(strsplit(sub$core,'_'),function(x){x[length(x)]}))
 
-# filename of the tsne saved by the script
-# choose the filename of the tsne such that it reflects the tsne setting
-fn_tsne = file.path(out_folder, '20170523_tsne_out.rdata')
-fn_phenograph = file.path(out_folder, '20170523_pheno_out.rdata')
-fn_flowsom = file.path(out_folder, '20170523_flowsom_out.rdata')
+comb = merge(sub,unique(HER2), by = 'IMCname')
+comb = merge(comb,Sample_metadata[,c('core','PID')], by = 'core')
+comb = merge(comb,na.omit(Sample_metadat_zuri[,c('PID','HER2')]), by = 'PID',all.x = T)
+my.formula <- y ~ x
 
-# For plotting only: removes outliers with values higher than xx% of all cells
-censor_val = 0.999
-
-# point size for plots
-size = 0.1
-
-# define excluded channels
-crap_channels = c("Time" ,"Event_length" ,"X89Y_BC1" , "X96Ru_Vol1" , "X98Ru_Vol2","X99Ru_Vol3" , "X100Ru_Vol4" , "X101Ru_Vol5" , "X102Ru_Vol6" , "X103Rh_BC2" , "X104Ru_Vol7" , "X105Pd_BC3" , "X106Pd_BC4" , "X108Pd_BC5" , "X110Pd_BC6" , "X113In_BC7" , "X115In_BC8" , "X120Sn" , "X131Xe" , "X138Ba" , "X140Ce_Beads" , "X150Nd_CD68" , "X151Eu" ,  "X156Gd"  ,"X157Gd" , "X173Yb_CD3" , "X176Yb_CD45" , "X190BCKG" , "X191Ir_DNA1" , "X193Ir_DNA2" , "X195Pt" , "X196Pt" , "X208Pb" , "X209Bi_BC9" ,"MCB102" ,  "MCB104"   ,"MCB105"   ,"MCB106",   "MCB108" ,  "MCB110"  , "MCB113" ,  "MCB115"  ,"DNA191" ,  "DNA193"  , "Live194" ,
-"Live195" , "beadDist" ,"barcode" ,"Beads140" , 'DNA1', 'DNA2'
-)
+ggplot(comb, aes(x=IMC_pos_count, y=IHC_count ))+
+  geom_point(aes(alpha=1,color=HER2, size=1))+ #color=as.factor(GRADE),
+  geom_smooth(method = "lm")+
+  scale_color_viridis(option="viridis")+
+  stat_poly_eq(formula = my.formula, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) +
+  theme_bw()
 
 ```
-
-
-## Start the script
-### Load the data$
-
-```{r}
-### load cell data (cells rescaled expanded)
-cells <- fread(fn_cells,header = T)
-
-
-```
-
-```{r}
-#idvars = c('ImageNumber', 'ObjectNumber','AreaShape_Area', 'AreaShape_MajorAxisLength', 'AreaShape_MinorAxisLength')
-idvars = c('ImageNumber', 'ObjectNumber')
-
-
-measurevar = colnames(cells)[grep(paste(paste0(cp_measurevars,'_'),collapse='|'), colnames(cells), ignore.case=TRUE)]
-cells_long = melt.data.table(cells, id.vars =idvars , variable.factor = F,measure.vars = measurevar)
-
-
-cells_long[,':='(
-  measuretype=getInfoFromFileList(.BY,sep = '_', strPos = 1),
-  measure=getInfoFromFileList(.BY,sep = '_', strPos = 2),
-  channel=as.numeric(getInfoFromFileList(.BY,sep = '_', strPos = 4, censorStr = 'c'))
-  ), by=variable]
-```
-
-
-
-
-```{r}
-### load TMA metadata
-TMA_metadata <- fread(fn_meta,header = T)
-
-#make long meta data from TMA metadata and image meta data
-
-
-image_meta = merge(image_meta_short, TMA_metadata, by="core")
-```
-
-
-
-```{r}
-cells_long[, id := paste(.BY,collapse =  "_"), by=.(ImageNumber,ObjectNumber)]
-```
-
-```{r}
-idcols = colnames(cells_long)[!colnames(cells_long) %in% c('measure', 'value', 'variable')]
-dat = dcast.data.table(cells_long, formula = paste0(paste(idcols, collapse = '+'), '~', 'measure'), value.var = 'value')
-
-
-dat = merge(dat, panel[,list(channel, clean_Target)], by='channel')
-dat = merge(dat, image_meta[,list(ImageNumber, core)], by = 'ImageNumber')
-```
-
-```{r}
-dat[, channel := clean_Target]
-dat[, counts := MeanIntensity ]
-dat[, condition := core]
-
-
-```
-
-
-
-```{r}
-cells = NULL
-cells_long = NULL
-```
-
-Transformation for IMC is slighly different (at least the one I recommend)
-```{r}
-
-# remove the NA counts
-
-dat = subset(dat, !is.na(counts))
-
-
-### calculate transformed counts ####
-#dat[ , counts_transf := asinh(counts/5)]
-
-dat[ , counts_transf := log10(counts+min(counts[counts >0])), by=channel]
-
-```
-
-```{r}
-# make a list of good channels
-good_channels = unique(dat$channel)[!unique(dat$channel) %in% crap_channels]
-print(good_channels)
-```
-
-
-
-
-
-
-## From here it is the same code as the normal analysis
-```{r}
-# remove duplicate in live sample before running t-SNE
-dat[,sum_all := sum(counts[channel %in% good_channels]), by= id]
-
-# remove all 0 cells
-dat = subset(dat, sum_all != 0)
-```
-
-
-
-### Run the tsne analysis
-If save tsne is activated,
-```{r Prepare and run tsne}
-###### Run Tsne #####
-# make a list
-setkey(dat, id)
-# number of cells per condition
-print(dat[ , .(nCells = length(unique(id))), by=condition])
-print(dat[ , .(nCells = length(unique(id)))])
-
-set.seed(rand_seed)
-
-# choose the tsne channels
-
-tsne_channels = good_channels
-
-
-if (load_tsne & file.exists(fn_tsne)){
-  load(fn_tsne)
-} else {
-  tsne = bbRtools::calcTSNE(dat, tsne_channels, value_var = 'counts',
-                          id_var = 'id', group_var='condition', scale = F, subsample_groups=1000, subsample_mode='unequal')
-  
-  save(tsne, file=fn_tsne)
-  
-}
-```
-
-If selected remove all cells not present in the tsne
-```{r Keep only TSNE cells}
-if (subsampled_cells_only){
-  ########## subset the data to only include the subsampled cells
-  setkey(dat, id)
-  dat = dat[tsne$Y$id ,]
-}
-```
-
-This defines a colormap with lots and lots of colors
-```{r Generate a color pallette for plotting}
-qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
-col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
-```
-
-Look at an example channel mapped on the tsne
-```{r}
-#plot the t-SNE Map by marker
-print(unique(dat$channel))
-print(good_channels)
-# you can replace good_channels[1] with any marker name
-marker = good_channels[3]
-p =subset(dat, channel == marker)[tsne$Y] %>%
-  ggplot(aes(x=bh_V1, y=bh_V2, color=censor_dat(counts,censor_val)))+
-  geom_point(alpha=0.5, size=1)+
-  scale_color_gradientn(colours=rev(brewer.pal(11, 'Spectral')), name='Counts')+
-  ggtitle(marker)
-
-p
-```
-
-
-
-Make an overview plot of all the channels on the tsne
-```{r plot a t-SNE Map for all the markers}
-#plot a t-SNE Map for all the markers
-dat[, c_counts := bbRtools::censor_dat(counts,censor_val), by=channel]
-dat[, c_counts_scaled := c_counts, by=channel]
-dat[, c_counts_scaled := (c_counts_scaled/max(c_counts_scaled)), by=channel]
-dat[c_counts_scaled < 0, c_counts_scaled := 0, by=channel]
-
-p = subset(dat, channel %in% good_channels)[tsne$Y] %>%
-  ggplot(aes(x=bh_V1, y=bh_V2, color=c_counts_scaled))+
-  facet_wrap(~channel, scales = "free", ncol = 10)+
-  geom_point(alpha=0.5, size=0.5)+
-  scale_color_gradientn(colours=rev(brewer.pal(11, 'Spectral')), name='Counts')+
-  ggtitle('')+
-  theme(strip.background = element_blank(),
-        axis.line=element_blank(),
-        axis.text.x=element_blank(),
-        axis.text.y=element_blank(),
-        axis.ticks=element_blank(),
-        axis.title.x=element_blank(),
-        axis.title.y=element_blank(),
-        panel.background=element_blank(),
-        panel.border=element_blank(),
-        panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        plot.background=element_blank()) 
-
-p
-
-```
-
-
-## Phenograph analysis
-
-```{r Run phenograph}
-if (load_phenograph & file.exists(fn_phenograph)){
-  load(fn_phenograph)
-} else {
-# with joining with the tsne data, only the cells used for tsne are used
-cluster_pheno = dat[tsne$Y] %>%
-  bbRtools::do_phenograph(good_channels, valuevar='counts_transf', idvar = 'id', k = 30, seed = rand_seed)
-
-  save(cluster_pheno, file=fn_phenograph)
-  
-}
-```
-```{r Run flowsom}
-# with joining with the tsne data, only the cells used for tsne are used
-
-if (load_flowsom & file.exists(fn_flowsom)){
-  load(fn_flowsom)
-} else {
-  # with joining with the tsne data, only the cells used for tsne are used
-  cluster_flowsom = bbRtools::do_flowsom(dat, good_channels, valuevar='counts_transf', idvar = 'id', k = 20, seed = rand_seed)
-
-  save(cluster_flowsom, file=fn_flowsom)
-  
-}
-```
-
-
-Map phenograph on the tsne
-
-```{r Plot the phenograph clusters on the tsne data}
-p = subset(dat, !duplicated(id))[tsne$Y][cluster_pheno] %>%
-  ggplot(aes(x=bh_V1, y=bh_V2))+
-  geom_point(size=0.3, alpha=1, aes(color=cluster))+
-  #scale_colour_brewer(palette="Paired")+
-  scale_color_manual(values = col_vector[10:70])+
-  ggtitle('Conditions')+
-  #stat_density2d(alpha=0.5, group=1, color='black')+
-  guides(color=guide_legend(override.aes=list(size=5)))+
-  theme(strip.background = element_blank(),
-        panel.background=element_rect(fill='white', colour = 'black'),
-        panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        plot.background=element_blank(),
-        legend.key = element_blank())
-p
-```
-# Plot a heatmap of the phenograph clusters
-
-Convert the data into a matrix to do a heatmap
-```{r}
-summary_dat = dat[cluster_pheno][ channel %in% good_channels ,list(
-  median_val = median(counts),
-  mean_val= mean(counts),
-  cell_cluster=.N
-), by=.(channel,cluster)]
-
-hm_dat = dcast.data.table(data =summary_dat, formula = 'cluster ~ channel',
-                          value.var = 'median_val')
-
-# save column
-trownames = hm_dat$cluster
-
-# convert to a matrix
-hm_dat = as.matrix(hm_dat[,-1,with=F])
-row.names(hm_dat) = trownames
-
-```
-
-Plot the heatmap with z-scoring per marker
-```{r}
-cols = rev(brewer.pal(11,'Spectral'))
-cmap = colorRampPalette(cols)
-
-
-tdist = as.dist(1-cor(t(hm_dat), method="spearman"))
-
-hr <- hclust(tdist, method="ward.D")
-co_r <- order.optimal(tdist, hr$merge)
-hr$merge = co_r$merge
-hr$order = co_r$order
-
-order_heatmap_zscored = row.names(hm_dat)[hr$order]
-
-tdist = as.dist(1-cor((hm_dat), method="spearman"))
-hc <- hclust(tdist, method="ward.D")
-co_c <- order.optimal(tdist, hc$merge)
-hc$merge = co_c$merge
-hc$order = co_c$order
-
-#z-score
-p_dat = scale(hm_dat)
-
-# censor z-score at 2
-p_dat[p_dat > 2] =2
-p_dat[p_dat < -2] =-2
-
-
-heatmap.2(p_dat,
-          scale ='none',
-          trace = "none",
-          col=cmap(75),
-          Rowv=as.dendrogram(hr),
-          Colv=as.dendrogram(hc),
-          density.info ='none',
-          #Colv =NA,
-          #keyorient=2,                                                  
-          #sepwidth = c(0,0),
-          cexRow=0.6,
-          cexCol=0.6,
-          margins=c(4,4),
-          xlab = 'Conditions',
-          ylab ='Cluster',
-          main = 'Cluster markers, z-scored'
-)
-
-
-```
-
-Heatmap with 0-1 scaling on the transformed data
-```{r}
-p_dat = asinh(hm_dat/5)
-p_dat = t(t(p_dat) / (apply(p_dat, 2, function(x) quantile(x, 0.99))))
-tdist = as.dist(1-cor(t(p_dat), method="spearman"))
-
-hr <- hclust(tdist, method="ward.D")
-co_r <- order.optimal(tdist, hr$merge)
-hr$merge = co_r$merge
-hr$order = co_r$order
-
-order_heatmap_01 = row.names(hm_dat)[hr$order]
-
-tdist = as.dist(1-cor((hm_dat), method="spearman"))
-hc <- hclust(tdist, method="ward.D")
-co_c <- order.optimal(tdist, hc$merge)
-hc$merge = co_c$merge
-hc$order = co_c$order
-
-heatmap.2(p_dat,
-          scale ='none',
-          trace = "none",
-          col=cmap(75),
-          Rowv=as.dendrogram(hr),
-          #RowSideColors=sel_col_vector[group_levels],
-          #dendrogram='column',
-          Colv=as.dendrogram(hc),
-          density.info ='none',
-          #Colv =NA,
-          #keyorient=2,                                                  
-          xlab = 'Conditions',
-          ylab ='Cluster',
-          main = 'Cluster markers, 0-1 scaled',
-          #sepwidth = c(0,0),
-          cexRow=0.6,
-          cexCol=0.6,
-          margins=c(4,4)
-
-          #comments = data.frame(names = row.names(tab_Prot))
-)
-```
-
-### Plot a heatmap with cluster frequencies on the side
-
-Prepare the data
-```{r}
-##############################distribution of cluster per condtition in a table
-
-
-dat_cluster_condition = dat[cluster_pheno][, .(cluster_mean = mean(counts_transf), ncells=.N),by=.(condition, channel, cluster)]
-dat_cluster_condition[, id:=paste(cluster, condition)]
-setkey(dat_cluster_condition, 'id')
-
-cluster_dat = subset(dat_cluster_condition, !duplicated(id))
-
-cluster_dat[, frac_cluster := ncells/sum(ncells), by=condition]
-cluster_dat[, frac_cells := ncells/sum(ncells), by=cluster]
-
-# this will order the clusters the same as in the heatmap above
-cluster_dat[, cluster_s := factor(as.character(cluster),levels = order_heatmap_zscored)]
-
-```
-
-Plot the fraction of cells per cluster as a heatmap
-```{r}
-p <- ggplot(cluster_dat, aes(x=cluster_s, y=condition)) + 
-  geom_tile(aes(fill = frac_cells), colour = "white") + 
-  scale_fill_gradient(low = "white", high = "steelblue")+
-  theme(panel.background = element_blank())+
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
-p
-
-```
-
-
-Plot the cluster composition
-```{r}
-#distribution of cluster per condtition in a staked bar graph
-
-p <- ggplot(cluster_dat, aes(x=cluster_s, y=frac_cells, fill=condition)) + 
-  geom_bar(stat='identity')+
-  scale_fill_manual(values = col_vector)+
-  coord_flip()+
-  theme(panel.background = element_blank())+
-  ggtitle('cluster composition')
-p
-
-```
-
-
-Plot the condition composition
-```{r}
-p <- ggplot(cluster_dat, aes(x=condition, y=frac_cluster, fill=cluster)) + 
-  geom_bar(stat='identity')+
-  scale_fill_manual(values = col_vector)+
-  coord_flip()+
-  theme(panel.background = element_blank())+
-  ggtitle('Condition composition')
-p
-```
-
-Distribution of cell number per cluster
-
-```{r}
-
-
-#distribution of cells per cluster
-cluster_sum =cluster_dat[, .(cells_cluster = sum(ncells)), by=cluster_s]
-p <- ggplot(cluster_sum, aes(x=cluster_s, y=cells_cluster)) + 
-  geom_bar(stat='identity')+
-  coord_flip()+
-  theme(panel.background = element_blank())+
-  ggtitle('distribution of cell numbers')
-p
-
-
-
-```
-
-
-
-
-## an example how to add manual cluster annotations
-```{r}
-fn_clusterannot = '/mnt/bbvolume/labcode/bbRexamples/ExampleData/example_clusteranotations.csv'
-
-dat_clusterannot = fread(fn_clusterannot)
-
-merge(dat[cluster_pheno], dat_clusterannot, by='cluster') 
-```
-
-Whenever needed the cluster annotations can now be added to the cluster data
-```{r}
-
-p <- merge(cluster_dat, dat_clusterannot, by='cluster') %>% 
-  ggplot(aes(x=condition, y=frac_cluster, fill=celltype)) + 
-  geom_bar(stat='identity')+
-  scale_fill_manual(values = col_vector)+
-  coord_flip()+
-  theme(panel.background = element_blank())+
-  ggtitle('Condition composition')
-p
-```
-
-Condition metadata and cluster metadata can be even combined simultaneoulsy
-
-
-```{r}
-
-p <- merge(cluster_dat, dat_clusterannot, by='cluster') %>%
-  merge(dat_meta, by='condition') %>%
-  ggplot(aes(x=stimulation, y=frac_cluster, fill=celltype)) + 
-  geom_bar(stat='identity')+
-  scale_fill_manual(values = col_vector)+
-  coord_flip()+
-  theme(panel.background = element_blank())+
-  ggtitle('Condition composition')
-p
-```
-
-
 
