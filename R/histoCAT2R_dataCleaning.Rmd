@@ -3,7 +3,7 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-#First part: Convert histoCAT output csvs to R format
+#First part: Convert histoCAT output csvs to format used in R pipelines
 
 Load the libraries
 ```{r Libraries, include = FALSE}
@@ -14,7 +14,7 @@ library(bbRtools)
 
 Settings
 ```{r 1.Settings}
-# Paths to your input and output folders
+# Paths to folder with individual image csv files
 folder_csv_images <- '/home/jana/Desktop/Bug/custom_gates_0/CSVsBasel'
 
 # Get today's date for file naming
