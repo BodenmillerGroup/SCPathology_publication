@@ -18,7 +18,8 @@ gates(:,3) = et_gates;
 put('gates',gates);
 put('sessionData',ses);
 
-%Metaclusters, according to the way we grouped the small clusters,
+%Metaclusters, according to the way we grouped the small clusters in R
+%pipeline
 %HARDCODED!!!
 pheno_col = ses(:,end);
 meta_pheno(pheno_col == 25) = 1;
@@ -56,4 +57,6 @@ gates(:,3) = et_gates;
 put('gates',gates);
 put('sessionData',ses);
 
+%In order to import the clusters as gates, run the
+%parse_Phenographclusters.m function
 

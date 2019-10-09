@@ -12,8 +12,8 @@ gates = retr('gates');
 tumor_pheno = ses(:,74);%Basel
 tumor_pheno = ses(:,73);%Zuri
 
-%Set all tumor cell types to label 100 (here cluster numbers 14:26)
-tumor_pheno(ismember(tumor_pheno,14:27)) = 100; %1:13 for stroma instead of tumor celltypes Basel
+%Set all tumor cell types to label 100 
+tumor_pheno(ismember(tumor_pheno,14:27)) = 100; %Basel
 tumor_pheno(ismember(tumor_pheno,[4,6,8:15,17,19:20,22:27,29:38,40])) = 100;%Zuri
 
 %Add to session as new Clustering column
