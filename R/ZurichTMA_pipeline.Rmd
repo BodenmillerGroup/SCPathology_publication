@@ -2384,3 +2384,231 @@ ggplot(comb, aes(x=IMC_pos_count, y=IHC_count ))+
 
 ```
 
+#B and A plots for psoitive cells only
+```{r}
+
+#ER
+datER = dat[channel == '112475Gd156Di Estroge',]
+datER = unique(datER)
+datER[,ncells := .N,by = 'core']
+datER = merge(datER,unique(Sample_metadata[,c('core','PID')]),by = 'core')
+
+ggplot(datER,aes(x = c_counts_norm))+
+  geom_density()
+
+#only positive cells
+datER = datER[c_counts_norm > 0.25,]
+datER[,ncells_pos := .N,by = 'core']
+
+
+datER[,mean_core := mean(c_counts_norm),by = 'core']
+datER = unique(datER[,c('PID','core','mean_core','ncells','ncells_pos')])
+
+#only use cores with at least 200 cells
+datER = datER[ncells > 200,]
+
+
+datER[,mean_patient := mean(mean_core), by = c('PID')]
+datER[,diff_patient := mean_patient - mean_core]
+datER[,overall_mean := mean(diff_patient)]
+datER[,overall_std := pracma::std(diff_patient)]
+
+
+prcnt = (length(which(datER$diff_patient > datER$overall_mean + 1.96 * datER$overall_std)) + length(which(datER$diff_patient < datER$overall_mean - 1.96 * datER$overall_std)))/nrow(datER)
+
+
+g = ggplot(datER,aes(x = mean_patient,y = diff_patient))+
+  geom_point()+
+  geom_hline(yintercept= datER$overall_mean, linetype="dashed", color = "red")+
+  geom_hline(yintercept= datER$overall_mean + 1.96 * datER$overall_std, linetype="dashed", color = "blue")+
+  geom_hline(yintercept= datER$overall_mean - 1.96 * datER$overall_std, linetype="dashed", color = "blue")+
+  ylim(-0.4,0.4)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+    ggtitle(paste0('ER_%',as.character(prcnt)))
+
+
+
+
+pdf('/home/jana/Desktop/R_dat/ERpos_200.pdf', width = 10, height = 10)
+g
+dev.off()
+
+
+#PR
+datER = dat[channel == '312878Gd158Di Progest',]
+datER = unique(datER)
+datER[,ncells := .N,by = 'core']
+datER = merge(datER,unique(Sample_metadata[,c('core','PID')]),by = 'core')
+
+ggplot(datER,aes(x = c_counts_norm))+
+  geom_density()
+
+#only pos
+datER = datER[c_counts_norm > 0.29,]
+datER[,ncells_pos := .N,by = 'core']
+
+
+datER[,mean_core := mean(c_counts_norm),by = 'core']
+datER = unique(datER[,c('PID','core','mean_core','ncells','ncells_pos')])
+
+#only use cores with at least 200 cells
+datER = datER[ncells > 200,]
+
+datER[,mean_patient := mean(mean_core), by = c('patientcode')]
+datER[,diff_patient := mean_patient - mean_core]
+datER[,overall_mean := mean(diff_patient)]
+datER[,overall_std := pracma::std(diff_patient)]
+
+
+prcnt = (length(which(datER$diff_patient > datER$overall_mean + 1.96 * datER$overall_std)) + length(which(datER$diff_patient < datER$overall_mean - 1.96 * datER$overall_std)))/nrow(datER)
+
+g = ggplot(datER,aes(x = mean_patient,y = diff_patient))+
+  geom_point()+
+  geom_hline(yintercept= datER$overall_mean, linetype="dashed", color = "red")+
+  geom_hline(yintercept= datER$overall_mean + 1.96 * datER$overall_std, linetype="dashed", color = "blue")+
+  geom_hline(yintercept= datER$overall_mean - 1.96 * datER$overall_std, linetype="dashed", color = "blue")+
+  ylim(-0.4,0.4)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+    ggtitle(paste0('PR_%',as.character(prcnt)))
+
+
+
+
+pdf('/home/jana/Desktop/R_dat/PRpos_200.pdf', width = 10, height = 10)
+g
+dev.off()
+
+
+#HER2
+datER = dat[channel == '201487Eu151Di cerbB',]
+datER = unique(datER)
+datER[,ncells := .N,by = 'core']
+datER = merge(datER,unique(Sample_metadata[,c('core','PID')]),by = 'core')
+
+ggplot(datER,aes(x = c_counts_norm))+
+  geom_density()
+
+#only pos
+datER = datER[c_counts_norm > 0.25,]
+datER[,ncells_pos := .N,by = 'core']
+
+
+datER[,mean_core := mean(c_counts_norm),by = 'core']
+datER = unique(datER[,c('PID','core','mean_core','ncells','ncells_pos')])
+
+#only use cores with at least 200 cells
+datER = datER[ncells > 200,]
+
+datER[,mean_patient := mean(mean_core), by = c('PID')]
+datER[,diff_patient := mean_patient - mean_core]
+datER[,overall_mean := mean(diff_patient)]
+datER[,overall_std := pracma::std(diff_patient)]
+
+prcnt = (length(which(datER$diff_patient > datER$overall_mean + 1.96 * datER$overall_std)) + length(which(datER$diff_patient < datER$overall_mean - 1.96 * datER$overall_std)))/nrow(datER)
+
+
+g = ggplot(datER,aes(x = mean_patient,y = diff_patient))+
+  geom_point()+
+  geom_hline(yintercept= datER$overall_mean, linetype="dashed", color = "red")+
+  geom_hline(yintercept= datER$overall_mean + 1.96 * datER$overall_std, linetype="dashed", color = "blue")+
+  geom_hline(yintercept= datER$overall_mean - 1.96 * datER$overall_std, linetype="dashed", color = "blue")+
+  ylim(-0.4,0.4)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+    ggtitle(paste0('HER2_%',as.character(prcnt)))
+
+
+
+pdf('/home/jana/Desktop/R_dat/HER2pos_200.pdf', width = 10, height = 10)
+g
+dev.off()
+
+
+
+#Ki67
+datER = dat[channel == '1441101Er168Di Ki67',]
+datER = unique(datER)
+datER[,ncells := .N,by = 'core']
+datER = merge(datER,unique(Sample_metadata[,c('core','PID')]),by = 'core')
+
+ggplot(datER,aes(x = c_counts_norm))+
+  geom_density()
+
+#only pos
+datER = datER[c_counts_norm > 0.09,]
+datER[,ncells_pos := .N,by = 'core']
+
+
+datER[,mean_core := mean(c_counts_norm),by = 'core']
+datER = unique(datER[,c('PID','core','mean_core','ncells','ncells_pos')])
+
+#only use cores with at least 200 cells
+datER = datER[ncells > 200,]
+
+datER[,mean_patient := mean(mean_core), by = c('PID')]
+datER[,diff_patient := mean_patient - mean_core]
+datER[,overall_mean := mean(diff_patient)]
+datER[,overall_std := pracma::std(diff_patient)]
+
+prcnt = (length(which(datER$diff_patient > datER$overall_mean + 1.96 * datER$overall_std)) + length(which(datER$diff_patient < datER$overall_mean - 1.96 * datER$overall_std)))/nrow(datER)
+
+g = ggplot(datER,aes(x = mean_patient,y = diff_patient))+
+  geom_point()+
+  geom_hline(yintercept= datER$overall_mean, linetype="dashed", color = "red")+
+  geom_hline(yintercept= datER$overall_mean + 1.96 * datER$overall_std, linetype="dashed", color = "blue")+
+  geom_hline(yintercept= datER$overall_mean - 1.96 * datER$overall_std, linetype="dashed", color = "blue")+
+  ylim(-0.4,0.4)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+    ggtitle(paste0('Ki67_%',as.character(prcnt)))
+
+
+
+pdf('/home/jana/Desktop/R_dat/Ki67pos_200.pdf', width = 10, height = 10)
+g
+dev.off()
+
+
+
+#Ecadh
+datER = dat[channel == '1031747Er167Di ECadhe',]
+datER = unique(datER)
+datER[,ncells := .N,by = 'core']
+datER = merge(datER,unique(Sample_metadata[,c('core','PID')]),by = 'core')
+
+ggplot(datER,aes(x = c_counts_norm))+
+  geom_density()
+
+#only pos
+datER = datER[c_counts_norm > 0.75,]
+datER[,ncells_pos := .N,by = 'core']
+
+
+datER[,mean_core := mean(c_counts_norm),by = 'core']
+datER = unique(datER[,c('PID','core','mean_core','ncells','ncells_pos')])
+
+#only use cores with at least 200 cells
+datER = datER[ncells > 200,]
+
+datER[,mean_patient := mean(mean_core), by = c('PID')]
+datER[,diff_patient := mean_patient - mean_core]
+datER[,overall_mean := mean(diff_patient)]
+datER[,overall_std := pracma::std(diff_patient)]
+
+prcnt = (length(which(datER$diff_patient > datER$overall_mean + 1.96 * datER$overall_std)) + length(which(datER$diff_patient < datER$overall_mean - 1.96 * datER$overall_std)))/nrow(datER)
+
+g = ggplot(datER,aes(x = mean_patient,y = diff_patient))+
+  geom_point()+
+  geom_hline(yintercept= datER$overall_mean, linetype="dashed", color = "red")+
+  geom_hline(yintercept= datER$overall_mean + 1.96 * datER$overall_std, linetype="dashed", color = "blue")+
+  geom_hline(yintercept= datER$overall_mean - 1.96 * datER$overall_std, linetype="dashed", color = "blue")+
+  ylim(-0.4,0.4)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+    ggtitle(paste0('Ecadh_%',as.character(prcnt)))
+
+
+pdf('/home/jana/Desktop/R_dat/Ecadhpos_200.pdf', width = 10, height = 10)
+g
+dev.off()
+
+
+```
+
