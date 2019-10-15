@@ -988,273 +988,6 @@ bp
 dev.off()
 ```
 
-#Boxplots of KL divergencies of individual cores to patient average per SEs and SCPs
-```{r}
-#SCPs
-
-#Take KL divergences calculated above
-kldiv_ordered = data.table(names(unlist(kldiv)))
-kldiv_ordered$kldiv = as.vector(unlist(kldiv))
-names(kldiv_ordered)[1] = 'core'
-kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[2],collapse = '.')}))
-kldiv_ordered = merge(kldiv_ordered,SCP_match, by = 'core')
-
-#Also for shannon entrpoies
-sh = merge(shannon_core,SCP_match)
-
-#Boxplot
-p <- ggplot(kldiv_ordered, aes(x=factor(patient_pheno), y=kldiv)) + #Exchange to sh for shannon entropy
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  ylab("KL div to patient average of core")+
-  xlab("Patientgroup")+
-  theme(panel.background = element_blank())+
-  ggtitle('Cores assigned to patient group')
-
-pdf('CoreKLdiv_to_patientMean_perAssignedPatientgroup.pdf')
-p
-dev.off()
-
-
-
-#Stromal environments (if this should only include stromal cells, then adapt KL divergence calculation above to exclude tumor cells or assign them all the same label)
-
-#Take KL divergences calculated above
-kldiv_ordered = data.table(names(unlist(kldiv)))
-kldiv_ordered$kldiv = as.vector(unlist(kldiv))
-names(kldiv_ordered)[1] = 'core'
-kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[2],collapse = '.')}))
-kldiv_ordered = merge(kldiv_ordered,n_clusters_orig, by = 'core')
-kldiv_ordered$cluster = factor(kldiv_ordered$cluster,levels = c(2,1,6,4,10,5,8,11,3,7,9))
-
-#Also for shannon entrpoies
-sh = merge(shannon_core,n_clusters_orig)
-sh$cluster = factor(sh$cluster,levels = c(2,1,6,4,10,5,8,11,3,7,9))
-
-p <- ggplot(kldiv_ordered, aes(x=factor(cluster), y=kldiv)) + #Exchange to sh for shannon entropy
-  geom_boxplot()+
-  geom_point(size=2, alpha=1)+
-  ylab("KL div to patietn average of core")+
-  xlab("Patientgroup")+
-  ylim(c(0,2))+
-  theme(panel.background = element_blank())+
-  ggtitle('Cores assigned to patient group')
-
-pdf('/home/jana/Desktop/R_dat/KL_stromalGroups.pdf')
-p
-dev.off()
-
-```
-
-
-#Regional heterogeneity of extended data figure 10d
-```{r}
-#Bubble plot: Of the patients containing at least 1 image individually assigned to a SCP group, which other SCP groups appear in different images of these same patients.
-
-#How many images of each SCP does every patient contain?
-co = merge(SCP_match,unique(Sample_metadata[,c('core','PID')]),by = 'core');
-co = dcast.data.table(co,'PID ~ patient_pheno')
-
-#Calculate number of patients containing at least one image of a SCP group
-nr_patients = as.matrix(co[,-'PID'])
-nr_patients[nr_patients > 1] = 1
-rownames(nr_patients) = co$PID
-nr_patients = colSums(nr_patients)
-table_nr = as.data.table(nr_patients)
-table_nr$Var1 = names(nr_patients)
-
-#Loop through SCP groups and
-amount = list()
-image_fraction = list()
-for (i in c(1:4,6:(ncol(co)))){ #SCP 5 was not found in this cohort
-
-  #Get patients containing at least one of current SCP
-  cur_nr = as.vector(as.matrix(co[,as.character(eval(i)),with = F]))
-  patients = co[cur_nr > 0,]
-  patients_mat = as.matrix(patients[,-'PID'])
-  rownames(patients_mat) = patients$PID
-  patients_mat[patients_mat > 1] = 1
-  
-  #Calculate in how many patients each of the other SCPs appear together with the one in question
-  cur_amount = colSums(patients_mat)
-  if (nrow(patients_mat) > 1){
-    cur_amount[as.character(eval(i))] = length(which(rowSums(patients_mat[,colnames(patients_mat)[colnames(patients_mat) != as.character(eval(i))]]) == 0))}
-  else{cur_amount[as.character(eval(i))] = length(which(sum(patients_mat[,colnames(patients_mat)[colnames(patients_mat) != as.character(eval(i))]]) == 0))}
-  amount = rbind(amount,cur_amount)
-  
-  #Calculate fractions of all images (of the patients in question) that are of a SCP group
-  image_fraction = rbind(image_fraction,(colSums(patients[,-'PID'])/(sum(colSums(patients[,-'PID'])))))
-
-}
-
-
-#Convert absolute counts to matrix and melt
-amount = matrix(unlist(amount), ncol = ncol(amount), byrow = F)
-rownames(amount) = as.character(c(1:4,6:(ncol(co))))
-colnames(amount) = as.character(c(1:4,6:(ncol(co))))
-m_amount = melt(amount)
-#Divide by nr of patients containing at least one of the SCP (to get fraction of all patients containing at least 1)
-m_amount = merge(m_amount,table_nr,by = 'Var1')
-m_amount = data.table(m_amount)
-m_amount[,fraction_patients := value/nr_patients]
-
-#Convert image fractions to matrix and melt
-image_fraction = matrix(unlist(image_fraction), ncol = ncol(image_fraction), byrow = F)
-rownames(image_fraction) = as.character(c(1:4,6:(ncol(co))))
-colnames(image_fraction) = as.character(c(1:4,6:(ncol(co))))
-m_act = melt(image_fraction)
-m_amount = merge(m_amount,m_act,by = c('Var1','Var2'))
-
-#Bubble plot
-pdf('SCP_mixing.pdf',width = 13)
-ggplot(m_amount, aes(x = factor(Var2), y = factor(Var1))) + 
-  geom_point(aes(size =value.y,#Fraction out of all images of patients containing at least one of SCP on y-axis that are of SCP on x-axis
-                 alpha = fraction_patients, #Fraction out of all patients containing at least one of SCP on y, containing at least one other image of SCP on x
-                 color = factor(Var2))) + 
-  scale_color_manual(values = mycols_patient[unique(m_amount$Var1)])+
-  #scale_color_gradient(low="white", high="red",name = "...") +
-  scale_size(range = c(1, 15),name = "Out of patients containing 1, fraction of images in each group") +
-  theme(axis.text.y=element_text(color = c(mycols_patient[unique(m_amount$Var1)])))
-dev.off()
-
-
-
-
-
-#Same as above but for stromal environments (SEs)
-
-#How many images of each SE does every patient contain?
-co2 = merge(n_clusters_orig,unique(Sample_metadata[,c('core','PID')]),by = 'core');
-co2 = dcast.data.table(co2,'PID ~ cluster')
-
-#Calculate number of patients containing at least one image of a SE group
-nr_patients = as.matrix(co2[,-'PID'])
-nr_patients[nr_patients > 1] = 1
-rownames(nr_patients) = co2$PID
-nr_patients = colSums(nr_patients)
-table_nr = as.data.table(nr_patients)
-table_nr$Var1 = names(nr_patients)
-
-#Loop through SCP groups and
-amount = list()
-image_fraction = list()
-for (i in c(1:11)){
-  
-  #Get patients containing at least one of current SE
-  cur_nr = as.vector(as.matrix(co2[,as.character(eval(i)),with = F]))
-  patients = co2[cur_nr > 0,]
-  patients_mat = as.matrix(patients[,-'PID'])
-  rownames(patients_mat) = patients$PID
-  patients_mat[patients_mat > 1] = 1
-  
-  #Calculate in how many patients each of the other SEs appear together with the one in question
-  cur_amount = colSums(patients_mat)
-  if (nrow(patients_mat) > 1){
-    cur_amount[as.character(eval(i))] = length(which(rowSums(patients_mat[,colnames(patients_mat)[colnames(patients_mat) != as.character(eval(i))]]) == 0))}
-  else{cur_amount[as.character(eval(i))] = length(which(sum(patients_mat[,colnames(patients_mat)[colnames(patients_mat) != as.character(eval(i))]]) == 0))}
-  amount = rbind(amount,cur_amount)
-  
-  #Calculate fractions of all images (of the patients in question) that are of a SCP group
-  image_fraction = rbind(image_fraction,(colSums(patients[,-'PID'])/(sum(colSums(patients[,-'PID'])))))
-}
-
-
-#Convert absolute counts to matrix and melt
-amount = matrix(unlist(amount), ncol = ncol(amount), byrow = F)
-rownames(amount) = as.character(c(1:11))
-colnames(amount) = as.character(c(1:11))
-m_amount = melt(amount)
-#Divide by nr of patients containing at least one of the SE (to get fraction of all patients containing at least 1)
-m_amount = merge(m_amount,table_nr,by = 'Var1')
-m_amount = data.table(m_amount)
-m_amount[,fraction_patients := value/nr_patients]
-
-#Convert image fractions to matrix and melt
-image_fraction = matrix(unlist(image_fraction), ncol = ncol(image_fraction), byrow = F)
-rownames(image_fraction) = as.character(c(1:11))
-colnames(image_fraction) = as.character(c(1:11))
-m_act = melt(image_fraction)
-m_amount = merge(m_amount,m_act,by = c('Var1','Var2'))
-
-#Bubble plot
-pdf('SE_mixing.pdf',width = 20)
-ggplot(m_amount, aes(x = factor(Var2), y = factor(Var1))) + 
-  geom_point(shape = 21,color = 'black',aes(size =value.y,#Fraction out of all images of patients containing at least one of SCP on y-axis that are of SCP on x-axis
-                 alpha = fraction_patients,
-                 fill = fraction_patients)) + #Fraction out of all patients containing at least one of SCP on y, containing at least one other image of SCP on x
-  #scale_color_manual(values = mycols_patient[unique(m_amount$Var1)])+
-  scale_fill_gradient(low="white", high="red",name = "...") +
-  scale_size(range = c(1, 15),name = "...") 
-dev.off()
-
-
-
-#Combined SCP and SE as in Extended Data 10
-names(co)[2:length(names(co))] = paste0('SCP_',names(co)[2:length(names(co))])
-names(co2)[2:length(names(co2))] = paste0('StromalRegion_',names(co2)[2:length(names(co2))])
-co_comb = merge(co,co2,by = 'PID')
-nr_patients = as.matrix(co_comb[,-'PID'])
-nr_patients[nr_patients > 1] = 1
-rownames(nr_patients) = co_comb$PID
-nr_patients = colSums(nr_patients)
-table_nr = as.data.table(nr_patients)
-table_nr$Var1 = names(nr_patients)
-
-amount = list()
-actual_amount =
-tot_amount_SCP = list()
-tot_amount_stroma = list()
-for (i in colnames(co_comb)[colnames(co_comb) != 'PID']){
-  cur_nr = as.vector(as.matrix(co_comb[,eval(i),with = F]))
-  patients = co_comb[cur_nr > 0,]
-  patients_mat = as.matrix(patients[,-'PID'])
-  rownames(patients_mat) = patients$PID
-  patients_mat[patients_mat > 1] = 1
-  cur_amount = colSums(patients_mat)
-  cur_code = str_split(i,'_')[[1]][1]
-  
-  if (nrow(patients_mat) > 1){
-    cur_amount[as.character(eval(i))] = length(which(rowSums(patients_mat[,colnames(patients_mat)[(colnames(patients_mat) != as.character(eval(i))) & str_detect(colnames(patients_mat),cur_code)]]) == 0))}
-  else{cur_amount[as.character(eval(i))] = length(which(sum(patients_mat[,colnames(patients_mat)[(colnames(patients_mat) != as.character(eval(i))) & str_detect(colnames(patients_mat),cur_code)]]) == 0))}
-  amount = rbind(amount,cur_amount)
-  
-  scp = colSums(patients[,str_detect(colnames(patients),'SCP'),with = F])/(sum(colSums(patients[,str_detect(colnames(patients),'SCP'),with = F])))
-  stroma = colSums(patients[,str_detect(colnames(patients),'StromalRegion'),with = F])/(sum(colSums(patients[,str_detect(colnames(patients),'StromalRegion'),with = F])))
-  actual_amount = rbind(actual_amount,c(scp,stroma))
-  tot_amount_SCP = rbind(tot_amount_SCP,c(i,sum(colSums(patients[,c(colnames(patients)[str_detect(colnames(patients),'SCP')]),with = F])))) #Are both identical
-}
-
-cnames = colnames(amount)
-amount = matrix(unlist(amount), ncol = ncol(amount), byrow = F)
-rownames(amount) = cnames
-colnames(amount) = cnames
-m_amount = melt(amount)
-m_amount = merge(m_amount,table_nr,by = 'Var1')
-m_amount = data.table(m_amount)
-m_amount[,fraction_images := value/nr_patients]
-actual_amount = matrix(unlist(actual_amount), ncol = ncol(actual_amount), byrow = F)
-rownames(actual_amount) = cnames
-colnames(actual_amount) = cnames
-m_act = melt(actual_amount)
-m_amount = merge(m_amount,m_act,by = c('Var1','Var2'))
-
-#Order microenvironment regions differently
-order_hierarchy = c('SCP_1','SCP_2','SCP_3','SCP_4','SCP_5','SCP_6','SCP_7','SCP_8','SCP_9','SCP_10','SCP_11','SCP_12','SCP_13','SCP_14','SCP_15','SCP_16','SCP_17','SCP_18','StromalRegion_2','StromalRegion_1','StromalRegion_6','StromalRegion_4','StromalRegion_10','StromalRegion_5','StromalRegion_8','StromalRegion_11','StromalRegion_3','StromalRegion_7','StromalRegion_9')
-m_amount$Var1 = factor(m_amount$Var1,levels = rev(order_hierarchy))
-m_amount$Var2 = factor(m_amount$Var2,levels = order_hierarchy)
-
-pdf('/home/jana/Desktop/R_dat/probability_mixing_stroma_regions.pdf',width = 20,height = 15)
-ggplot(m_amount, aes(x = factor(Var2), y = factor(Var1))) + 
-  geom_point(shape = 21,color = 'black',aes(size =value.y,
-                 #alpha = fraction_images,
-                 fill = fraction_images)) + 
-  #scale_color_manual(values = mycols_patient[unique(m_amount$Var1)])+
-  scale_fill_gradient(low="white", high="red",name = "Out of patients containing 1, fraction of images in each group") +
-  scale_size(range = c(1, 15),name = "Out of patients containing 1, fraction of images in each group") +
-  theme(axis.text.x = element_text(angle = 90))
-dev.off()
-
-```
 
 
 #Read in tumor community data from Matlab (topological single-cell communities were extracted using the Matlab wrapper of the C++ Louvain implementation) including only tumor cells
@@ -2020,6 +1753,275 @@ fwrite(d,file = 'Zurich_enrichment_SE_significantInteractions_positive.csv',col.
 
 ```
 
+#Boxplots of KL divergencies of individual cores to patient average per SEs and SCPs
+```{r}
+#SCPs
+
+#Take KL divergences calculated above
+kldiv_ordered = data.table(names(unlist(kldiv)))
+kldiv_ordered$kldiv = as.vector(unlist(kldiv))
+names(kldiv_ordered)[1] = 'core'
+kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[2],collapse = '.')}))
+kldiv_ordered = merge(kldiv_ordered,SCP_match, by = 'core')
+
+#Also for shannon entrpoies
+sh = merge(shannon_core,SCP_match)
+
+#Boxplot
+p <- ggplot(kldiv_ordered, aes(x=factor(patient_pheno), y=kldiv)) + #Exchange to sh for shannon entropy
+  geom_boxplot()+
+  geom_point(size=2, alpha=1)+
+  ylab("KL div to patient average of core")+
+  xlab("Patientgroup")+
+  theme(panel.background = element_blank())+
+  ggtitle('Cores assigned to patient group')
+
+pdf('CoreKLdiv_to_patientMean_perAssignedPatientgroup.pdf')
+p
+dev.off()
+
+
+
+#Stromal environments (if this should only include stromal cells, then adapt KL divergence calculation above to exclude tumor cells or assign them all the same label)
+
+#Take KL divergences calculated above
+kldiv_ordered = data.table(names(unlist(kldiv)))
+kldiv_ordered$kldiv = as.vector(unlist(kldiv))
+names(kldiv_ordered)[1] = 'core'
+kldiv_ordered$core = unlist(lapply(strsplit(kldiv_ordered$core,'[.]'), function(x){paste(x[2],collapse = '.')}))
+kldiv_ordered = merge(kldiv_ordered,n_clusters_orig, by = 'core')
+kldiv_ordered$cluster = factor(kldiv_ordered$cluster,levels = c(2,1,6,4,10,5,8,11,3,7,9))
+
+#Also for shannon entrpoies
+sh = merge(shannon_core,n_clusters_orig)
+sh$cluster = factor(sh$cluster,levels = c(2,1,6,4,10,5,8,11,3,7,9))
+
+p <- ggplot(kldiv_ordered, aes(x=factor(cluster), y=kldiv)) + #Exchange to sh for shannon entropy
+  geom_boxplot()+
+  geom_point(size=2, alpha=1)+
+  ylab("KL div to patietn average of core")+
+  xlab("Patientgroup")+
+  ylim(c(0,2))+
+  theme(panel.background = element_blank())+
+  ggtitle('Cores assigned to patient group')
+
+pdf('/home/jana/Desktop/R_dat/KL_stromalGroups.pdf')
+p
+dev.off()
+
+```
+
+
+#Regional heterogeneity of extended data figure 10d
+```{r}
+#Bubble plot: Of the patients containing at least 1 image individually assigned to a SCP group, which other SCP groups appear in different images of these same patients.
+
+#How many images of each SCP does every patient contain?
+co = merge(SCP_match,unique(Sample_metadata[,c('core','PID')]),by = 'core');
+co = dcast.data.table(co,'PID ~ patient_pheno')
+
+#Calculate number of patients containing at least one image of a SCP group
+nr_patients = as.matrix(co[,-'PID'])
+nr_patients[nr_patients > 1] = 1
+rownames(nr_patients) = co$PID
+nr_patients = colSums(nr_patients)
+table_nr = as.data.table(nr_patients)
+table_nr$Var1 = names(nr_patients)
+
+#Loop through SCP groups and
+amount = list()
+image_fraction = list()
+for (i in c(1:4,6:(ncol(co)))){ #SCP 5 was not found in this cohort
+
+  #Get patients containing at least one of current SCP
+  cur_nr = as.vector(as.matrix(co[,as.character(eval(i)),with = F]))
+  patients = co[cur_nr > 0,]
+  patients_mat = as.matrix(patients[,-'PID'])
+  rownames(patients_mat) = patients$PID
+  patients_mat[patients_mat > 1] = 1
+  
+  #Calculate in how many patients each of the other SCPs appear together with the one in question
+  cur_amount = colSums(patients_mat)
+  if (nrow(patients_mat) > 1){
+    cur_amount[as.character(eval(i))] = length(which(rowSums(patients_mat[,colnames(patients_mat)[colnames(patients_mat) != as.character(eval(i))]]) == 0))}
+  else{cur_amount[as.character(eval(i))] = length(which(sum(patients_mat[,colnames(patients_mat)[colnames(patients_mat) != as.character(eval(i))]]) == 0))}
+  amount = rbind(amount,cur_amount)
+  
+  #Calculate fractions of all images (of the patients in question) that are of a SCP group
+  image_fraction = rbind(image_fraction,(colSums(patients[,-'PID'])/(sum(colSums(patients[,-'PID'])))))
+
+}
+
+
+#Convert absolute counts to matrix and melt
+amount = matrix(unlist(amount), ncol = ncol(amount), byrow = F)
+rownames(amount) = as.character(c(1:4,6:(ncol(co))))
+colnames(amount) = as.character(c(1:4,6:(ncol(co))))
+m_amount = melt(amount)
+#Divide by nr of patients containing at least one of the SCP (to get fraction of all patients containing at least 1)
+m_amount = merge(m_amount,table_nr,by = 'Var1')
+m_amount = data.table(m_amount)
+m_amount[,fraction_patients := value/nr_patients]
+
+#Convert image fractions to matrix and melt
+image_fraction = matrix(unlist(image_fraction), ncol = ncol(image_fraction), byrow = F)
+rownames(image_fraction) = as.character(c(1:4,6:(ncol(co))))
+colnames(image_fraction) = as.character(c(1:4,6:(ncol(co))))
+m_act = melt(image_fraction)
+m_amount = merge(m_amount,m_act,by = c('Var1','Var2'))
+
+#Bubble plot
+pdf('SCP_mixing.pdf',width = 13)
+ggplot(m_amount, aes(x = factor(Var2), y = factor(Var1))) + 
+  geom_point(aes(size =value.y,#Fraction out of all images of patients containing at least one of SCP on y-axis that are of SCP on x-axis
+                 alpha = fraction_patients, #Fraction out of all patients containing at least one of SCP on y, containing at least one other image of SCP on x
+                 color = factor(Var2))) + 
+  scale_color_manual(values = mycols_patient[unique(m_amount$Var1)])+
+  #scale_color_gradient(low="white", high="red",name = "...") +
+  scale_size(range = c(1, 15),name = "Out of patients containing 1, fraction of images in each group") +
+  theme(axis.text.y=element_text(color = c(mycols_patient[unique(m_amount$Var1)])))
+dev.off()
+
+
+
+
+
+#Same as above but for stromal environments (SEs)
+
+#How many images of each SE does every patient contain?
+co2 = merge(n_clusters_orig,unique(Sample_metadata[,c('core','PID')]),by = 'core');
+co2 = dcast.data.table(co2,'PID ~ cluster')
+
+#Calculate number of patients containing at least one image of a SE group
+nr_patients = as.matrix(co2[,-'PID'])
+nr_patients[nr_patients > 1] = 1
+rownames(nr_patients) = co2$PID
+nr_patients = colSums(nr_patients)
+table_nr = as.data.table(nr_patients)
+table_nr$Var1 = names(nr_patients)
+
+#Loop through SCP groups and
+amount = list()
+image_fraction = list()
+for (i in c(1:11)){
+  
+  #Get patients containing at least one of current SE
+  cur_nr = as.vector(as.matrix(co2[,as.character(eval(i)),with = F]))
+  patients = co2[cur_nr > 0,]
+  patients_mat = as.matrix(patients[,-'PID'])
+  rownames(patients_mat) = patients$PID
+  patients_mat[patients_mat > 1] = 1
+  
+  #Calculate in how many patients each of the other SEs appear together with the one in question
+  cur_amount = colSums(patients_mat)
+  if (nrow(patients_mat) > 1){
+    cur_amount[as.character(eval(i))] = length(which(rowSums(patients_mat[,colnames(patients_mat)[colnames(patients_mat) != as.character(eval(i))]]) == 0))}
+  else{cur_amount[as.character(eval(i))] = length(which(sum(patients_mat[,colnames(patients_mat)[colnames(patients_mat) != as.character(eval(i))]]) == 0))}
+  amount = rbind(amount,cur_amount)
+  
+  #Calculate fractions of all images (of the patients in question) that are of a SCP group
+  image_fraction = rbind(image_fraction,(colSums(patients[,-'PID'])/(sum(colSums(patients[,-'PID'])))))
+}
+
+
+#Convert absolute counts to matrix and melt
+amount = matrix(unlist(amount), ncol = ncol(amount), byrow = F)
+rownames(amount) = as.character(c(1:11))
+colnames(amount) = as.character(c(1:11))
+m_amount = melt(amount)
+#Divide by nr of patients containing at least one of the SE (to get fraction of all patients containing at least 1)
+m_amount = merge(m_amount,table_nr,by = 'Var1')
+m_amount = data.table(m_amount)
+m_amount[,fraction_patients := value/nr_patients]
+
+#Convert image fractions to matrix and melt
+image_fraction = matrix(unlist(image_fraction), ncol = ncol(image_fraction), byrow = F)
+rownames(image_fraction) = as.character(c(1:11))
+colnames(image_fraction) = as.character(c(1:11))
+m_act = melt(image_fraction)
+m_amount = merge(m_amount,m_act,by = c('Var1','Var2'))
+
+#Bubble plot
+pdf('SE_mixing.pdf',width = 20)
+ggplot(m_amount, aes(x = factor(Var2), y = factor(Var1))) + 
+  geom_point(shape = 21,color = 'black',aes(size =value.y,#Fraction out of all images of patients containing at least one of SCP on y-axis that are of SCP on x-axis
+                 alpha = fraction_patients,
+                 fill = fraction_patients)) + #Fraction out of all patients containing at least one of SCP on y, containing at least one other image of SCP on x
+  #scale_color_manual(values = mycols_patient[unique(m_amount$Var1)])+
+  scale_fill_gradient(low="white", high="red",name = "...") +
+  scale_size(range = c(1, 15),name = "...") 
+dev.off()
+
+
+
+#Combined SCP and SE as in Extended Data 10
+names(co)[2:length(names(co))] = paste0('SCP_',names(co)[2:length(names(co))])
+names(co2)[2:length(names(co2))] = paste0('StromalRegion_',names(co2)[2:length(names(co2))])
+co_comb = merge(co,co2,by = 'PID')
+nr_patients = as.matrix(co_comb[,-'PID'])
+nr_patients[nr_patients > 1] = 1
+rownames(nr_patients) = co_comb$PID
+nr_patients = colSums(nr_patients)
+table_nr = as.data.table(nr_patients)
+table_nr$Var1 = names(nr_patients)
+
+amount = list()
+actual_amount =
+tot_amount_SCP = list()
+tot_amount_stroma = list()
+for (i in colnames(co_comb)[colnames(co_comb) != 'PID']){
+  cur_nr = as.vector(as.matrix(co_comb[,eval(i),with = F]))
+  patients = co_comb[cur_nr > 0,]
+  patients_mat = as.matrix(patients[,-'PID'])
+  rownames(patients_mat) = patients$PID
+  patients_mat[patients_mat > 1] = 1
+  cur_amount = colSums(patients_mat)
+  cur_code = str_split(i,'_')[[1]][1]
+  
+  if (nrow(patients_mat) > 1){
+    cur_amount[as.character(eval(i))] = length(which(rowSums(patients_mat[,colnames(patients_mat)[(colnames(patients_mat) != as.character(eval(i))) & str_detect(colnames(patients_mat),cur_code)]]) == 0))}
+  else{cur_amount[as.character(eval(i))] = length(which(sum(patients_mat[,colnames(patients_mat)[(colnames(patients_mat) != as.character(eval(i))) & str_detect(colnames(patients_mat),cur_code)]]) == 0))}
+  amount = rbind(amount,cur_amount)
+  
+  scp = colSums(patients[,str_detect(colnames(patients),'SCP'),with = F])/(sum(colSums(patients[,str_detect(colnames(patients),'SCP'),with = F])))
+  stroma = colSums(patients[,str_detect(colnames(patients),'StromalRegion'),with = F])/(sum(colSums(patients[,str_detect(colnames(patients),'StromalRegion'),with = F])))
+  actual_amount = rbind(actual_amount,c(scp,stroma))
+  tot_amount_SCP = rbind(tot_amount_SCP,c(i,sum(colSums(patients[,c(colnames(patients)[str_detect(colnames(patients),'SCP')]),with = F])))) #Are both identical
+}
+
+cnames = colnames(amount)
+amount = matrix(unlist(amount), ncol = ncol(amount), byrow = F)
+rownames(amount) = cnames
+colnames(amount) = cnames
+m_amount = melt(amount)
+m_amount = merge(m_amount,table_nr,by = 'Var1')
+m_amount = data.table(m_amount)
+m_amount[,fraction_images := value/nr_patients]
+actual_amount = matrix(unlist(actual_amount), ncol = ncol(actual_amount), byrow = F)
+rownames(actual_amount) = cnames
+colnames(actual_amount) = cnames
+m_act = melt(actual_amount)
+m_amount = merge(m_amount,m_act,by = c('Var1','Var2'))
+
+#Order microenvironment regions differently
+order_hierarchy = c('SCP_1','SCP_2','SCP_3','SCP_4','SCP_5','SCP_6','SCP_7','SCP_8','SCP_9','SCP_10','SCP_11','SCP_12','SCP_13','SCP_14','SCP_15','SCP_16','SCP_17','SCP_18','StromalRegion_2','StromalRegion_1','StromalRegion_6','StromalRegion_4','StromalRegion_10','StromalRegion_5','StromalRegion_8','StromalRegion_11','StromalRegion_3','StromalRegion_7','StromalRegion_9')
+m_amount$Var1 = factor(m_amount$Var1,levels = rev(order_hierarchy))
+m_amount$Var2 = factor(m_amount$Var2,levels = order_hierarchy)
+
+pdf('/home/jana/Desktop/R_dat/probability_mixing_stroma_regions.pdf',width = 20,height = 15)
+ggplot(m_amount, aes(x = factor(Var2), y = factor(Var1))) + 
+  geom_point(shape = 21,color = 'black',aes(size =value.y,
+                 #alpha = fraction_images,
+                 fill = fraction_images)) + 
+  #scale_color_manual(values = mycols_patient[unique(m_amount$Var1)])+
+  scale_fill_gradient(low="white", high="red",name = "Out of patients containing 1, fraction of images in each group") +
+  scale_size(range = c(1, 15),name = "Out of patients containing 1, fraction of images in each group") +
+  theme(axis.text.x = element_text(angle = 90))
+dev.off()
+
+```
+
+
 #IHC-IMC comprison from Extended Data 2: first part whole image quant, second part single-cell quant
 
 #Load IHC QuPATH scoring (image quant)
@@ -2155,6 +2157,40 @@ ggplot(plot_dat, aes_string(x="IHC", y="IMC" ))+
   stat_poly_eq(formula = my.formula, 
                 aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
                 parse = TRUE) +theme_bw()
+
+
+#On top of each other
+my.formula <- y ~ x
+ggplot(plot_dat, aes_string(x="IHC", y="IMC" ,color = "Antigen"))+
+  geom_point(aes(alpha=1,size=0.3))+
+  geom_smooth(method = "lm")+
+  stat_poly_eq(formula = my.formula, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) +theme_bw()
+```
+
+#Summary across all correlations for Fig1
+```{r}
+#Get R squares separately
+Rsq = data.frame()
+for (i in unique(plot_dat$Antigen)){
+  cur = plot_dat[Antigen == i,]
+  res = lm(IMC ~ IHC, data=cur)
+  Rsq = rbind(Rsq,cbind(i,summary(res)$r.squared))
+}
+
+Rsq$V2 = as.numeric(as.character(Rsq$V2))
+Rsq$i = factor(Rsq$i, levels = c('ER','PR','HER2','Ecadherin','KI67'))
+
+
+pdf('/home/jana/Desktop/R_dat/Rsq.pdf')
+ggplot(Rsq,aes(y = V2,x = i,fill = i))+
+  geom_bar(stat = "identity")+
+  scale_fill_manual(values = mycols_basel_meta[c(23,24,20,22,16)])+
+  ylim(0,1)+
+  xlab('Marker')+
+  ylab('R squared')
+dev.off()
 ```
 
 #Read in Single-cell IHC data for comparison with IMC quant
@@ -2211,6 +2247,7 @@ IHCSC$IMCname = mapvalues(IHCSC$Name, unique(IHCSC$Name), IHCvsIMC_map[match(uni
 
 #IHC and IMC positive single-cell quantitfication comparison
 ```{r}
+
 #Take single-cell IMC data and dcast
 wide = dcast.data.table(dat,formula = 'core + id ~ channel', value.var = 'c_counts')
 
@@ -2231,6 +2268,7 @@ sub$IMCname = unlist(lapply(strsplit(sub$core,'_'),function(x){x[length(x)]}))
 #Merge with IHC data
 comb = merge(sub,unique(IHCSC[marker == 'Ki67pos',]), by = 'IMCname')
 comb = merge(comb, Sample_metadata, by = 'core')
+save = comb[,c('core','IMC_pos_count','IHC_count','marker')]
 
 #Plot correlation of amount of positively counted single cells for IMC and IHC
 my.formula <- y ~ x
@@ -2259,6 +2297,8 @@ sub$IMCname = unlist(lapply(strsplit(sub$core,'_'),function(x){x[length(x)]}))
 comb = merge(sub,unique(IHCSC[marker == 'ERpos',]), by = 'IMCname')
 comb = merge(comb,Sample_metadata[,c('core','PID')], by = 'core')
 comb = merge(comb,na.omit(Sample_metadat_zuri[,c('PID','Erperc')]), by = 'PID',all.x = T)
+save = rbind(save,comb[,c('core','IMC_pos_count','IHC_count','marker')])
+
 my.formula <- y ~ x
 ggplot(comb, aes(x=IMC_pos_count, y=IHC_count ))+
   geom_point(aes(alpha=1,color=Erperc, size=1))+ #color=as.factor(GRADE),
@@ -2283,6 +2323,7 @@ sub$IMCname = unlist(lapply(strsplit(sub$core,'_'),function(x){x[length(x)]}))
 comb = merge(sub,unique(IHCSC[marker == 'PRpos',]), by = 'IMCname')
 comb = merge(comb,Sample_metadata[,c('core','PID')], by = 'core')
 comb = merge(comb,na.omit(Sample_metadat_zuri[,c('PID','Prperc')]), by = 'PID',all.x = T)
+save = rbind(save,comb[,c('core','IMC_pos_count','IHC_count','marker')])
 
 my.formula <- y ~ x
 
@@ -2328,6 +2369,9 @@ sub$IMCname = unlist(lapply(strsplit(sub$core,'_'),function(x){x[length(x)]}))
 comb = merge(sub,unique(Ecadh), by = 'IMCname')
 comb = merge(comb,Sample_metadata[,c('core','PID')], by = 'core')
 comb = merge(comb,na.omit(Sample_metadat_zuri[,c('PID','Ecadh')]), by = 'PID',all.x = T)
+comb$marker = 'Ecadh'
+save = rbind(save,comb[,c('core','IMC_pos_count','IHC_count','marker')])
+
 my.formula <- y ~ x
 
 ggplot(comb, aes(x=IMC_pos_count, y=IHC_count ))+
@@ -2371,6 +2415,9 @@ sub$IMCname = unlist(lapply(strsplit(sub$core,'_'),function(x){x[length(x)]}))
 comb = merge(sub,unique(HER2), by = 'IMCname')
 comb = merge(comb,Sample_metadata[,c('core','PID')], by = 'core')
 comb = merge(comb,na.omit(Sample_metadat_zuri[,c('PID','HER2')]), by = 'PID',all.x = T)
+comb$marker = 'HER2'
+save = rbind(save,comb[,c('core','IMC_pos_count','IHC_count','marker')])
+
 my.formula <- y ~ x
 
 ggplot(comb, aes(x=IMC_pos_count, y=IHC_count ))+
@@ -2384,7 +2431,35 @@ ggplot(comb, aes(x=IMC_pos_count, y=IHC_count ))+
 
 ```
 
-#B and A plots for psoitive cells only
+#Difference in pos counts
+```{r}
+
+#On top of each other
+my.formula <- y ~ x
+
+save$marker = factor(save$marker, levels = c('ERpos','PRpos','HER2','Ecadh','Ki67pos'))
+pdf('/home/jana/Desktop/R_dat/counts.pdf')
+ggplot(save, aes_string(x="IHC_count", y="IMC_pos_count" ,color = "marker"))+
+  geom_point(alpha=0.3,size=2)+
+  scale_color_manual(values = mycols_basel_meta[c(23,24,20,22,16)])+
+  geom_smooth(method = "lm")+
+  stat_poly_eq(formula = my.formula, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) +theme_bw()
+dev.off()
+
+#Differences in pos cell counts
+save[,diff:= abs(IMC_pos_count - IHC_count)]
+
+pdf('/home/jana/Desktop/R_dat/diff_counts.pdf')
+ggplot(save,aes(y = diff,x = marker))+
+  geom_violin()
+dev.off()
+
+
+```
+
+#B and A plots for positive cells only across cores of same patient
 ```{r}
 
 #ER
