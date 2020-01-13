@@ -9,3 +9,7 @@ Image and other early analysis steps were performed using Matlab. Since the sing
 
 R:
 Downstream analysis was performed using R pipelines. The R analysis is divided into one notebook for the analysis of the first TMA of 281 patients from University Hospital Basel and a second one for comparison and analysis of the second multi-core cohort from Univerity Hospital Zurich. All input data required to reproduce the figures of this publication are available on Zenodo(10.5281/zenodo.3518284). The BaselTMA and ZurichTMA folders contain the input data for the respective R pipelines.
+
+Important notes when working with the data provided on Zenodo: 
+- The single-cell data provided for downstream R analysis is already spillover corrected.
+- The single-cell masks that were generated using CellProfiler do not always have sequential single-cell labels. Every now and then an ID is skipped. This can cause issues in histoCAT and therefore the single cells are automatically relabelled sequentially during loading into histoCAT. We exported the single-cell data for downstream R analysis from histoCAT and therefore the single-cell labels are the newly assigned sequential ones and match the labels in the histoCAT sessions. However, the original mask files that are also provided here still contain the original labels from CellProfiler. Therefore, for matching the single-cell data provided here directly to the masks (e.g. for visualization of single-cell features on the image outside of histoCAT), the single-cell labels in the mask need to be relabelled sequentially first.
