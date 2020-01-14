@@ -1,6 +1,5 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3518284.svg)](https://doi.org/10.5281/zenodo.3518284)
-# SCPathology_publication
-The Single-Cell Pathology Landscape of Breast Cancer Reveals Intra-Tumor Cellular Organization and Novel Subgroups
+# The Single-Cell Pathology Landscape of Breast Cancer
 
 This repository contains all code used to produce the results and figures of the publication "The Single-Cell Pathology Landscape of Breast Cancer". All data, including tiff images, masks, single-cell and patient data are available on Zenodo (10.5281/zenodo.3518284).
 
