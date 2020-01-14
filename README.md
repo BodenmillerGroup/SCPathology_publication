@@ -22,7 +22,7 @@ SingleCell_and_Metadata.zip contains the single-cell and patient data as well as
 | Single-cell data ZurichTMA                | SingleCell_and_Metadata/ZurichTMA/SC_dat.csv                |
 | Single-cell segmentation masks both TMAs  | OMEandSingleCellMasks/Basel_Zuri_masks/                     |
 | Image tiffs both TMAs                     | OMEandSingleCellMasks/ome/                                  |
-| Antibody panel                            | SingleCell_and_Metadata/Basel_Zuri_StainingPanel            |
+| Antibody panel                            | SingleCell_and_Metadata/Basel_Zuri_StainingPanel.csv        |
 
 ### Important notes when working with the data provided on Zenodo: 
 - The single-cell data provided for downstream R analysis is already spillover corrected.
